@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Map It Out</title>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    
+    
+	
+	
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<meta name="msapplication-config" content="images/browserconfig.xml">
+    <meta name="mobile-web-app-capable" content="yes">
+	<meta name="theme-color" content="#d89000">
+    
+	<link rel="manifest" href="images/manifest.json">
+	<link rel="icon" href="mapitout/logo.svg" type="image/svg+xml">
+	<link rel="shortcut icon" href="favicon.ico">
+    <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+    <link rel="stylesheet" type="text/css" href="styles/grapheditor.css">
+	<link rel="stylesheet" media="(forced-colors: active)" href="styles/high-contrast.css" id="high-contrast-stylesheet">
+	<script src="mapitout/config.js"></script>
+	<script src="js/bootstrap.js"></script>
+	<style type="text/css">
+		.geBlock {
+			z-index:-3;
+			margin:100px;
+			margin-top:40px;
+			margin-bottom:30px;
+			padding:20px;
+			text-align:center;
+			min-width:50%;
+		}
+		.geBlock h1, .geBlock h2 {
+			margin-top:0px;
+			padding-top:0px;
+		}
+	</style>
+</head>
+<body class="geEditor geClassic">
+<div id="geInfo">
+	<div class="geBlock">
+		<h1><img src="mapitout/logo.svg" width="48" height="48" alt=""> Map It Out</h1>
+		<p>AI-assisted mapping and estimating diagrams, powered by your local models.</p>
+		<h2 id="geStatus">Loading... <img src="images/spin.gif"/></h2>
+		<p>
+			Please ensure JavaScript is enabled.
+		</p>
+	</div>
+</div>
+<script src="js/main.js"></script>
+</body>
+</html>

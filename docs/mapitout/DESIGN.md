@@ -1,0 +1,54 @@
+# Map It Out - AI backend design (v0.1)
+
+## Purpose
+Map It Out is the diagramming/mapping front end of an AI-assisted mapping and
+estimating product. This repo is a fork of draw.io (Apache 2.0). We use it as a
+tool: users describe or attach a diagram and a **local LLM** (LM Studio) creates
+or updates it. Later: agents drive it (see Roadmap).
+
+## Architecture
+```
+Browser (mapitout.html)
+  mapitout/config.js  -> window.MAPITOUT_CONFIG
+  js/PreConfig.js     -> DRAWIO_CONFIG = MAPITOUT_CONFIG   (draw.io's override hook)
+  Editor.configure()  -> aiConfigs / aiModels / enableAi
+  AI chat dialog  --POST /v1/chat/completions-->  LM Studio (localhost:1234)
+```
+- Request shape is OpenAI-compatible (draw.io's built-in `gpt` config slot);
+  only the endpoint and model list are overridden. Response path
+  `$.choices[0].message.content`.
+- `createPublic` is removed from `aiActions`, and cloud models are removed from
+  `aiModels`, so no prompt or diagram leaves the machine by default.
+- Zero edits to draw.io core, except one line in `js/PreConfig.js`.
+
+## Config (`window.MAPITOUT_LLM`, define before `mapitout/config.js`)
+| key | default | note |
+|---|---|---|
+| baseUrl | `http://localhost:1234/v1` | LM Studio server |
+| models | `[{name, model}]` | `model` = id from `GET {baseUrl}/models` |
+| apiKey | `lm-studio` | placeholder; draw.io hides models with no key |
+
+## Constraints / risks
+- **CORS**: LM Studio server must have CORS enabled when the page is served from
+  another origin. **Mixed content**: an https-hosted page cannot call http://localhost
+  in some browsers - serve over http locally or put a TLS reverse proxy in front.
+- **Key handling**: the key slot is shared with draw.io's `gpt` config, so a real
+  OpenAI key set via `gptApiKey` would be sent to the LM Studio URL. Keep it a placeholder.
+- **Trademark**: README forbids using/modifying the draw.io name or logo for our
+  product. `mapitout.html` and `mapitout/logo.svg` replace branding on the entry
+  page only. **Known gap**: the in-app logo (`images/drawlogo*`, `EditorUi.js`,
+  `HomeDialog.js`) and window title suffix "draw.io app" are not yet rebranded.
+  Required before any public release.
+- Logo is a placeholder; replace `mapitout/logo.svg` with the real mark.
+
+## Roadmap (not built)
+1. Full rebrand pass (logo, titles, about/help links, manifest, favicon).
+2. Estimating layer: quantity/cost attributes on shapes, export to estimate sheet.
+3. Agents/skills calling the same LM Studio endpoint (or an agent gateway) headlessly.
+4. Tests: config-contract test (Playwright) in CI.
+
+## Run locally
+```
+cd src/main/webapp && python3 -m http.server 8080
+# open http://localhost:8080/mapitout.html ; start LM Studio server (port 1234)
+```
