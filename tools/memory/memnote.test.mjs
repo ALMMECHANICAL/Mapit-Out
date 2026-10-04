@@ -104,7 +104,8 @@ test('impossible calendar dates are rejected (regression: Date.parse normalised 
 
 test('two sessions on the same device, project and day get different file names (so synced clones never collide)', async () => {
 	const a = await repo(), b = await repo(); // independent clones that have not seen each other's notes
-	const fa = (await save(note(), { repo: a })).file, fb = (await save(note(), { repo: b })).file;
+	const now = new Date('2026-10-04T10:00:00Z');
+	const fa = (await save(note(), { repo: a, now, rand: () => 'aaaaaa' })).file, fb = (await save(note(), { repo: b, now, rand: () => 'bbbbbb' })).file;
 	assert.notEqual(path.basename(fa), path.basename(fb));
 	assert.match(path.basename(fa), /^2026-10-04-\d{6}-workstation-mapitout-[0-9a-f]{6}\.md$/);
 });
@@ -214,4 +215,9 @@ test('latest: hard maxChars cap, positive-integer checks, case-insensitive proje
 	await assert.rejects(latest(d, { maxChars: 0 }), /positive integer/);
 	await assert.rejects(latest(d, { maxChars: 1.5 }), /positive integer/);
 	await assert.rejects(latest(d, { n: 0 }), /positive integer/);
+});
+
+test('dates in years 0001-0099 are real dates (regression: Date.UTC maps them to 19xx)', () => {
+	assert.deepEqual(validateNote(note({ date: '0050-01-01' })).errors.filter((e) => /date/.test(e)), []);
+	assert.ok(validateNote(note({ date: '0050-02-30' })).errors.some((e) => /date/.test(e)));
 });

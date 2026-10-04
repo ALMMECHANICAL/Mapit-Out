@@ -422,6 +422,7 @@ export function deriveTasks(events) {
 			case 'task.released': {
 				const who = ev.actor.name;
 				if (t.owner === who || (ev.actor.kind === 'human' && t.owner)) {
+					t.contested = [...new Set(t.contested)].filter((n) => n !== t.owner); // a writer that claimed twice queues once, and never behind itself
 					// the owner (or a human freeing an abandoned claim) gives the task up; the next claimant, if any, inherits it
 					t.owner = t.contested.shift() || null;
 					t.status = t.owner ? 'claimed' : 'open';

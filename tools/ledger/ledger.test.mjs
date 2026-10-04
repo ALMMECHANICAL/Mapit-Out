@@ -427,3 +427,13 @@ test('JSON Schema ts pattern agrees with isIsoUtc on every day over ~300 years a
 	}
 	for (const good of ['2024-02-29T00:00:00.000Z', '2000-02-29T12:00:00.000Z']) assert.equal(re.test(good), true, good);
 });
+
+test('a writer that claimed twice offline queues once: one release does not hand the task back to the same name', () => {
+	const mk = (n, ts, actor, type) => ({ id: n.toString(16).padStart(12, '0') + '-0000000000', ts, type, task: 't', summary: 's', actor });
+	const o = { kind: 'agent', name: 'owner' }, d = { kind: 'agent', name: 'dup' };
+	const t = deriveTasks([mk(1, '2026-10-04T10:00:00.000Z', o, 'task.claimed'), mk(2, '2026-10-04T10:00:01.000Z', d, 'task.claimed'),
+		mk(3, '2026-10-04T10:00:02.000Z', d, 'task.claimed'), mk(4, '2026-10-04T10:00:03.000Z', o, 'task.released'),
+		mk(5, '2026-10-04T10:00:04.000Z', d, 'task.released')]).get('t');
+	assert.equal(t.owner, null);
+	assert.equal(t.status, 'open');
+});
