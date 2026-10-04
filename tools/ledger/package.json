@@ -1,0 +1,13 @@
+{
+	"name": "mapitout-ledger",
+	"private": true,
+	"version": "0.1.0",
+	"description": "Shared activity ledger for humans, agents and models (Map It Out)",
+	"type": "module",
+	"engines": { "node": ">=18" },
+	"bin": { "ledger": "cli.mjs" },
+	"scripts": {
+		"test": "node --test",
+		"verify": "node cli.mjs verify"
+	}
+}

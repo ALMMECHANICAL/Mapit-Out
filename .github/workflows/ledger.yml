@@ -1,0 +1,29 @@
+name: Ledger CI
+
+on:
+  push:
+    branches: [dev]
+    paths: ['tools/ledger/**', 'ledger/**', '.github/workflows/ledger.yml']
+  pull_request:
+    paths: ['tools/ledger/**', 'ledger/**', '.github/workflows/ledger.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit and integration tests
+        run: node --test
+        working-directory: tools/ledger
+      - name: Verify the committed ledger (hashes, chains, schema, secrets)
+        run: node tools/ledger/cli.mjs verify
+      - name: JSON Schema is in sync with the code
+        run: |
+          node tools/ledger/cli.mjs schema > /tmp/schema.json
+          diff /tmp/schema.json ledger/schema/event.v1.schema.json

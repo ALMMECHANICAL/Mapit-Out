@@ -1,0 +1,162 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/ALMMECHANICAL/Mapit-Out/ledger/schema/event.v1.schema.json",
+	"title": "Map It Out ledger event v1",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"v",
+		"id",
+		"ts",
+		"project",
+		"type",
+		"summary",
+		"actor",
+		"prev",
+		"hash"
+	],
+	"properties": {
+		"v": {
+			"const": 1
+		},
+		"id": {
+			"type": "string",
+			"pattern": "^[0-9a-f]{12}-[0-9a-f]{10}$"
+		},
+		"ts": {
+			"type": "string",
+			"format": "date-time"
+		},
+		"project": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 60
+		},
+		"type": {
+			"enum": [
+				"session.started",
+				"session.ended",
+				"note",
+				"decision",
+				"error",
+				"handoff",
+				"task.created",
+				"task.claimed",
+				"task.progress",
+				"task.blocked",
+				"task.released",
+				"task.completed",
+				"artifact.created",
+				"artifact.changed",
+				"diagram.changed",
+				"tool.call",
+				"asset.registered"
+			]
+		},
+		"summary": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 500
+		},
+		"actor": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"kind",
+				"name"
+			],
+			"properties": {
+				"kind": {
+					"enum": [
+						"human",
+						"agent",
+						"model",
+						"system"
+					]
+				},
+				"name": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 80
+				},
+				"model": {
+					"type": "string",
+					"maxLength": 80
+				},
+				"host": {
+					"type": "string",
+					"maxLength": 80
+				},
+				"session": {
+					"type": "string",
+					"maxLength": 80
+				}
+			}
+		},
+		"task": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 80
+		},
+		"parent": {
+			"type": "string",
+			"pattern": "^[0-9a-f]{12}-[0-9a-f]{10}$"
+		},
+		"refs": {
+			"type": "array",
+			"maxItems": 20,
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": [
+					"kind",
+					"ref"
+				],
+				"properties": {
+					"kind": {
+						"enum": [
+							"file",
+							"commit",
+							"pr",
+							"issue",
+							"url",
+							"diagram",
+							"adr",
+							"asset",
+							"event"
+						]
+					},
+					"ref": {
+						"type": "string",
+						"maxLength": 300
+					},
+					"note": {
+						"type": "string",
+						"maxLength": 300
+					}
+				}
+			}
+		},
+		"data": {
+			"type": "object",
+			"description": "Small type-specific payload, at most 4096 bytes serialised."
+		},
+		"prev": {
+			"oneOf": [
+				{
+					"type": "null"
+				},
+				{
+					"type": "string",
+					"pattern": "^[0-9a-f]{64}$"
+				}
+			],
+			"description": "Hash of the previous event in the same shard file."
+		},
+		"hash": {
+			"type": "string",
+			"pattern": "^[0-9a-f]{64}$",
+			"description": "sha256 of the canonical JSON of this event without the hash field."
+		}
+	}
+}
