@@ -5,7 +5,7 @@
 // Identity comes from the environment (LEDGER_ACTOR, LEDGER_KIND, LEDGER_MODEL, LEDGER_HOST, LEDGER_SESSION),
 // never from tool arguments, so a model cannot write as someone else. stdout is protocol only; logs go to stderr.
 
-import { createInterface } from 'node:readline';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
 	ACTOR_KINDS, EVENT_TYPES, LIMITS, REF_KINDS, append, buildContext, deriveTasks, filterEvents, readAll, verify
@@ -118,7 +118,7 @@ function check(schema, value, where) {
 			if (!value || typeof value !== 'object' || Array.isArray(value)) return `${where} must be an object`;
 			const props = schema.properties;
 			if (!props) return null; // free-form object (data); the ledger enforces its size
-			for (const k of Object.keys(value)) if (!(k in props)) return `unknown argument "${where === 'arguments' ? k : where + '.' + k}"`;
+			for (const k of Object.keys(value)) if (!Object.hasOwn(props, k)) return `unknown argument "${where === 'arguments' ? k : where + '.' + k}"`;
 			for (const k of schema.required || []) if (value[k] === undefined) return `missing required argument "${where === 'arguments' ? k : where + '.' + k}"`;
 			for (const [k, s] of Object.entries(props)) if (value[k] !== undefined) { const e = check(s, value[k], where === 'arguments' ? k : `${where}.${k}`); if (e) return e; }
 			return null;
@@ -178,21 +178,42 @@ export function createHandler({ env = process.env, dir = env.LEDGER_DIR } = {}) 
 	};
 }
 
+// Splits a byte stream into lines without ever holding more than MAX_LINE bytes of one line: an oversized line is
+// dropped as it arrives (reported once) and the rest of it is discarded up to its newline. Limits are in UTF-8 bytes.
+export async function* readLines(input, maxBytes = MAX_LINE) {
+	let parts = [], size = 0, discarding = false;
+	for await (const chunk of input) {
+		let start = 0;
+		for (;;) {
+			const nl = chunk.indexOf(0x0a, start);
+			const end = nl < 0 ? chunk.length : nl;
+			if (!discarding) {
+				size += end - start;
+				if (size > maxBytes) { discarding = true; parts = []; yield null; } // null = this line was too large
+				else parts.push(chunk.subarray(start, end));
+			}
+			if (nl < 0) break;
+			if (!discarding) yield Buffer.concat(parts).toString('utf8');
+			parts = []; size = 0; discarding = false; start = nl + 1;
+		}
+	}
+	if (!discarding && size > 0) yield Buffer.concat(parts).toString('utf8'); // last line without a trailing newline
+}
+
 // stdio loop. Resolves when stdin closes.
 export async function serve({ input = process.stdin, output = process.stdout, env = process.env } = {}) {
 	const handle = createHandler({ env });
-	const rl = createInterface({ input, crlfDelay: Infinity });
 	let chain = Promise.resolve(); // handle messages strictly in order
-	for await (const line of rl) {
-		if (!line.trim()) continue;
+	for await (const line of readLines(input)) {
+		if (line !== null && !line.trim()) continue;
 		chain = chain.then(async () => {
 			let res;
-			if (line.length > MAX_LINE) res = err(null, -32600, 'message too large');
+			if (line === null) res = err(null, -32600, 'message too large');
 			else {
 				let msg;
 				try { msg = JSON.parse(line); } catch { res = err(null, -32700, 'parse error'); }
 				if (msg !== undefined) {
-					try { res = await handle(msg); } catch (e) { console.error('ledger-mcp internal error:', e); res = err(msg.id, -32603, 'internal error'); }
+					try { res = await handle(msg); } catch (e) { console.error('ledger-mcp internal error:', e); res = err(msg && msg.id, -32603, 'internal error'); }
 				}
 			}
 			if (res) output.write(JSON.stringify(res) + '\n');
@@ -201,6 +222,10 @@ export async function serve({ input = process.stdin, output = process.stdout, en
 	await chain;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// True when run directly or through a symlink (npm's bin shim); process.argv[1] may be the link, not the real file.
+function isMain() {
+	try { return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+}
+if (isMain()) {
 	serve().catch((e) => { console.error(e); process.exit(1); });
 }

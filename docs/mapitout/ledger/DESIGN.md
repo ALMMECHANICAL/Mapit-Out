@@ -134,10 +134,10 @@ are kept first and are bounded (25 task lines, 3 hand-offs, 10 decisions, summar
 dropped first** and the cut is stated. `--max-chars` is a hard limit: if it is smaller than the fixed sections, the tail is cut and marked,
 so a small local model's context window is respected. This is the "read this first" for every actor.
 
-## 6. How LM Studio gets in (OPEN)
+## 6. How LM Studio gets in (adapter built; real-client verification OPEN)
 
 LM Studio cannot write to the ledger by itself. A local model's work becomes visible only if something
-writes it. Options, none built yet:
+writes it. Options (A is built; B is deferred; C works today):
 
 | Option | How | Trade-off |
 |---|---|---|
@@ -145,7 +145,7 @@ writes it. Options, none built yet:
 | B. Logging proxy | A small proxy in front of `localhost:1234` appends a `tool.call` event per request (summary only, never the prompt body) | Automatic, but records activity not intent |
 | C. Wrapper script | The person or an agent appends a summary after a session | Works today; relies on discipline |
 
-Recommendation: build A (it is the same adapter every other client needs), use C until then.
+Status: A is built and protocol-tested, but not yet verified against a real LM Studio build or local models (tool-calling quality varies); use C until the owner has tried it. B is deferred until the product is further developed.
 
 ## 7. Quality attributes
 

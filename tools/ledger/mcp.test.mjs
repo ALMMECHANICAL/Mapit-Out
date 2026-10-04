@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { Readable } from 'node:stream';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SUPPORTED_VERSIONS, TOOLS, createHandler } from './mcp.mjs';
+import { SUPPORTED_VERSIONS, TOOLS, createHandler, readLines } from './mcp.mjs';
 import { readAll, verify } from './ledger.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -114,8 +115,13 @@ test('context honours max_chars as a hard limit', async () => {
 
 // ---- end to end over real stdio
 
-function spawnServer(env) {
-	const child = spawn(process.execPath, [MCP], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+const children = new Set();
+test.after(() => { for (const c of children) c.kill(); }); // never leave a server waiting on open stdin if a test fails early
+
+function spawnServer(env, entry = MCP) {
+	const child = spawn(process.execPath, [entry], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+	children.add(child);
+	child.on('close', () => children.delete(child));
 	const lines = [];
 	let buf = '', waiter = null;
 	child.stdout.on('data', (d) => {
@@ -124,8 +130,12 @@ function spawnServer(env) {
 		while ((i = buf.indexOf('\n')) >= 0) { lines.push(buf.slice(0, i)); buf = buf.slice(i + 1); }
 		if (waiter) { const w = waiter; waiter = null; w(); }
 	});
-	const next = async () => {
-		while (!lines.length) await new Promise((r) => { waiter = r; });
+	const next = async (ms = 10000) => {
+		const deadline = Date.now() + ms;
+		while (!lines.length) {
+			if (Date.now() > deadline) throw new Error('timed out waiting for a response from the MCP server');
+			await new Promise((r) => { waiter = r; setTimeout(r, 100); });
+		}
 		return JSON.parse(lines.shift());
 	};
 	return { child, next, send: (m) => child.stdin.write((typeof m === 'string' ? m : JSON.stringify(m)) + '\n') };
@@ -160,4 +170,50 @@ test('several MCP servers on one ledger keep every chain valid', async () => {
 	const v = await verify({ dir });
 	assert.equal(v.ok, true, v.problems.join('\n'));
 	assert.equal(v.events, 20);
+});
+
+test('one multibyte request over 1 MiB is rejected by bytes even though it is under 1 MiB of characters, and the server recovers', async () => {
+	const dir = await tmp();
+	const s = spawnServer({ LEDGER_DIR: dir, LEDGER_ACTOR: 'e2e' });
+	const big = '\u00e9'.repeat(600000); // 600k characters, 1.2 MB of UTF-8
+	s.send(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping', params: { pad: big } }));
+	assert.equal((await s.next()).error.code, -32600);
+	s.send(rpc('ping'));
+	assert.deepEqual((await s.next()).result, {});
+	s.child.stdin.end();
+});
+
+test('the server starts when launched through a symlink (how npm installs a bin)', async () => {
+	const dir = await tmp();
+	const link = path.join(dir, 'ledger-mcp');
+	await fs.symlink(MCP, link);
+	const s = spawnServer({ LEDGER_DIR: dir, LEDGER_ACTOR: 'e2e' }, link);
+	s.send(rpc('ping'));
+	assert.deepEqual((await s.next()).result, {});
+	s.child.stdin.end();
+});
+
+test('readLines: lines split across chunks and multibyte characters split across chunks; last line without newline', async () => {
+	const bytes = Buffer.from('{"a":"\u00e9"}\n{"b":2}\nlast');
+	const cut = bytes.indexOf(0xc3) + 1; // between the two bytes of the first multibyte character
+	const out = [];
+	for await (const l of readLines(Readable.from([bytes.subarray(0, cut), bytes.subarray(cut, cut + 5), bytes.subarray(cut + 5)]))) out.push(l);
+	assert.deepEqual(out, ['{"a":"\u00e9"}', '{"b":2}', 'last']);
+});
+
+test('readLines: an oversized line is reported once, never buffered whole, and the next line is intact', async () => {
+	const huge = Buffer.alloc(5000, 0x61);
+	const chunks = [Buffer.from('ok1\n'), huge.subarray(0, 2000), huge.subarray(2000), Buffer.from('\nok2\n')];
+	const out = [];
+	for await (const l of readLines(Readable.from(chunks), 1000)) out.push(l);
+	assert.deepEqual(out, ['ok1', null, 'ok2']);
+});
+
+test('arguments are checked as own properties: inherited names like constructor are unknown arguments', async () => {
+	const { handle, dir } = await server();
+	const r = await handle(call('ledger_append', JSON.parse('{"type":"note","summary":"x","constructor":{"a":1},"__proto__x":1}')));
+	assert.equal(r.error.code, -32602);
+	assert.match(r.error.message, /unknown argument/);
+	assert.equal((await readAll({ dir })).length, 0);
+	assert.match((await handle(call('ledger_tail', { toString: 1 }))).error.message, /unknown argument "toString"/);
 });

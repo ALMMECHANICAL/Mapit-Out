@@ -22,7 +22,7 @@ The server is spawned by the client, serves one client, and exits when stdin clo
 | `tools/list` | The five tools below with JSON Schema inputs. |
 | `tools/call` | Run the tool; result `{content:[{type:'text',text}], isError}`. Unknown tool or bad arguments: JSON-RPC error -32602. Ledger failures (validation, secret found, task already claimed): `isError: true` with the message. |
 | anything else with an `id` | -32601 method not found. Unparseable line: -32700. |
-Limits: a single input line over 1 MiB is rejected; one request is handled at a time per connection, in order.
+Limits: a single input line over 1 MiB (1,048,576 UTF-8 bytes) is rejected as it arrives, without buffering it, and the rest of that line is discarded; one request is handled at a time per connection, in order.
 
 ## 4. Tools
 | Tool | Arguments | Notes |
