@@ -6,7 +6,7 @@ an AI mapping/estimating product, wired to local LLMs via LM Studio.
 - Design first: see `docs/mapitout/DESIGN.md` before changing anything. Update it with the change.
 - Our code lives in `src/main/webapp/mapitout/` and `src/main/webapp/mapitout.html`.
   Keep upstream draw.io edits minimal (currently `js/PreConfig.js` only).
-- AI backend is configured only through `DRAWIO_CONFIG` (`aiConfigs`/`aiModels`), never by patching `Editor.js`.
+- AI backend is configured only through `DRAWIO_CONFIG` (`gptUrl`/`gptApiKey` and `aiModels` in `mapitout/config.js`), never by patching `Editor.js`.
 - Do not use draw.io name/logo in our branding (see README Trademark section).
 - API keys are config-only, never URL params (see comment in `Editor.js`).
 - `DRAWIO_CONFIG`/`mapitout/*.js` are served to every visitor: never put a real or shared API key there. Shared credentials go behind a server-side proxy; the committed default key is a non-secret placeholder.

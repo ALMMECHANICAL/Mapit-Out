@@ -20,7 +20,7 @@ Browser (mapitout.html)
   otherwise only on draw.io's own domains) and `settingsName`.
 - `createPublic` is removed from `aiActions`, and cloud models are removed from
   `aiModels`, so no prompt or diagram leaves the machine by default.
-- Zero edits to draw.io core, except `js/PreConfig.js` (hands config over, warns if missing).
+- Zero edits to draw.io core, except `js/PreConfig.js` (re-applies config, warns if missing). `config.js` also sets `DRAWIO_CONFIG` itself because `bootstrap.js` skips `PreConfig.js` on `*.draw.io`/`*.diagrams.net` hosts.
 - Deploy overrides go in `mapitout/env.js` (committed empty; no secrets, it is public to visitors).
 - **Model id must match LM Studio**: `local-model` is a placeholder; set the real id from `GET /v1/models` in `env.js` (console warning otherwise).
 
@@ -92,8 +92,10 @@ maintainability measured up front. New features land as design docs/ADRs first.
 
 ## Constraints / risks
 - **CORS**: LM Studio server must have CORS enabled when the page is served from
-  another origin. **Mixed content**: an https-hosted page cannot call http://localhost
-  in some browsers - serve over http locally or put a TLS reverse proxy in front.
+  another origin. **Mixed content**: modern browsers allow an https page to fetch
+  http://localhost (a potentially trustworthy origin since Mixed Content Level 2); the
+  block applies to non-local hosts, e.g. LM Studio's LAN IP - serve over plain http
+  locally or put a TLS reverse proxy in front.
 - **Saved-config isolation**: `settingsName: 'mapitout'` moves browser-saved config/settings to `.mapitout-*` keys, so a stock draw.io `.configuration` on the same origin cannot restore a cloud AI endpoint/key/model. Verified with a hostile saved config.
 - **Key handling**: the key slot is shared with draw.io's `gpt` config, so a real
   OpenAI key set via `gptApiKey` would be sent to the LM Studio URL. Keep it a placeholder.

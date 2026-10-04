@@ -1,7 +1,9 @@
 /**
  * Map It Out - runtime configuration (loaded before js/main.js by mapitout.html).
- * Exposes window.MAPITOUT_CONFIG, which js/PreConfig.js hands to draw.io as DRAWIO_CONFIG
- * (bootstrap.js loads PreConfig.js after page scripts and resets DRAWIO_CONFIG).
+ * Exposes window.MAPITOUT_CONFIG and also sets window.DRAWIO_CONFIG directly. js/PreConfig.js
+ * re-applies it (bootstrap.js loads PreConfig.js after page scripts and resets DRAWIO_CONFIG),
+ * but bootstrap.js skips PreConfig.js entirely on *.draw.io / *.diagrams.net hostnames, so the
+ * direct assignment keeps the backend enforced there too.
  *
  * Wires draw.io's AI chat to a local LM Studio server (OpenAI-compatible API).
  * No upstream draw.io code is modified: everything goes through the documented
@@ -48,4 +50,5 @@
 			return {name: m.name, model: m.model, config: 'gpt'};
 		})
 	});
+	window.DRAWIO_CONFIG = window.MAPITOUT_CONFIG;
 })();
