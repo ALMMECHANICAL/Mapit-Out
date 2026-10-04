@@ -81,7 +81,7 @@ codebase/business structure (an add-on), kept easy to split.
   read before acting. This includes work done in LM Studio, so LM Studio sessions need
   to write to (or be readable by) the ledger. **Decided (ADR 0004): append-only JSONL in git,
   one file per writer; core built** - see [ledger design](ledger/DESIGN.md). How LM Studio
-  writes to it is **OPEN** (MCP adapter, logging proxy or wrapper; ledger design section 6).
+  writes to it: the MCP adapter is built (`docs/mapitout/ledger/MCP.md`) but untested with a real LM Studio; the logging proxy is deferred.
 - **Headless-first**: the tool contract works with no UI; UIs sit on top. Candidate
   front ends: this editor, Open WebUI (**OPEN**). Gemini is a candidate for Google
   Workspace tasks only. Using fewer frontier models is fine; add one only when a

@@ -1,6 +1,6 @@
 # Shared activity ledger - design (v0.1)
 
-Status: **core built** (library, CLI, tests, schema). Adapters (MCP, hooks, proxy) are designed, not built.
+Status: **core built** (library, CLI, tests, schema). MCP adapter **built** ([MCP.md](MCP.md)); hooks and the logging proxy are designed, not built.
 Decision record: [ADR 0004](../adr/0004-shared-activity-ledger-jsonl-sharded-by-writer.md).
 Code: `tools/ledger/` · Data: `ledger/` · Schema: `ledger/schema/event.v1.schema.json`.
 
@@ -27,7 +27,7 @@ The owner's requirement: *everyone must know what everyone else is doing, and it
 ```mermaid
 flowchart TB
   W["Writers<br/>Human · Claude Code · LM Studio models · other models"]
-  I["Interfaces<br/>CLI (built) · Node library (built) · MCP adapter (planned)"]
+  I["Interfaces<br/>CLI (built) · Node library (built) · MCP adapter (built)"]
   G["Write path in the library<br/>validate → secret scan → lock → hash-chain → append"]
   S[("Store, in git<br/>ledger/events/YYYY-MM/<br/>one JSONL file per writer")]
   V["Derived views, never stored<br/>context digest · task state · verify"]
@@ -121,7 +121,7 @@ sequenceDiagram
 | CLI `tools/ledger/cli.mjs` | built | `append`, `tail`, `context`, `tasks`, `verify`, `schema`; identity from `LEDGER_*` env vars |
 | JSON Schema | built | Generated from the code constants; a test fails if the committed file drifts |
 | CI | built | Runs tests and `ledger verify` on every change under `tools/ledger/` or `ledger/` |
-| MCP adapter | designed | Tools `ledger_append`, `ledger_context`, `ledger_tasks` so any MCP-capable client can use the ledger |
+| MCP adapter `tools/ledger/mcp.mjs` | built | stdio server, tools `ledger_context`, `ledger_tasks`, `ledger_tail`, `ledger_append`, `ledger_verify`; identity from the environment. See [MCP.md](MCP.md), [ADR 0008](../adr/0008-mcp-adapter-for-the-ledger.md). Tested at protocol level; not yet verified against a real LM Studio build |
 | Claude Code hooks | designed | SessionStart runs `context`; Stop appends a `handoff` (fixes "memory skewed across devices") |
 | LM Studio route | OPEN | See 6 |
 | HTTP API (product) | later | Wraps the same library and schema |
@@ -141,7 +141,7 @@ writes it. Options, none built yet:
 
 | Option | How | Trade-off |
 |---|---|---|
-| A. MCP adapter | LM Studio calls the ledger tools as an MCP client (needs verifying that the installed LM Studio version supports MCP) | Best: the model records and reads itself |
+| A. MCP adapter (**built**, `tools/ledger/mcp.mjs`) | LM Studio calls the ledger tools as an MCP client (needs verifying that the installed LM Studio version supports MCP) | Best: the model records and reads itself |
 | B. Logging proxy | A small proxy in front of `localhost:1234` appends a `tool.call` event per request (summary only, never the prompt body) | Automatic, but records activity not intent |
 | C. Wrapper script | The person or an agent appends a summary after a session | Works today; relies on discipline |
 
@@ -176,7 +176,7 @@ Honest limits:
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Schema, library, CLI, tests, CI, ADRs, seed events | **built** |
-| 2 | MCP adapter; Claude Code SessionStart/Stop hooks; `ledger_context` in LM Studio | designed |
+| 2 | MCP adapter (**built**); Claude Code SessionStart/Stop hooks; `ledger_context` in LM Studio (owner to test) | partly built |
 | 3 | Logging proxy; asset register view; signed commits | designed / OPEN |
 | 4 | HTTP API for the product; Quick Quote audit events (metadata only); retention policy | later |
 

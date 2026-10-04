@@ -5,7 +5,7 @@
 	"description": "Shared activity ledger for humans, agents and models (Map It Out)",
 	"type": "module",
 	"engines": { "node": ">=18.3" },
-	"bin": { "ledger": "cli.mjs" },
+	"bin": { "ledger": "cli.mjs", "ledger-mcp": "mcp.mjs" },
 	"scripts": {
 		"test": "node --test",
 		"verify": "cd ../.. && node tools/ledger/cli.mjs verify"
