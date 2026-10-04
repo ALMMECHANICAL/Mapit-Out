@@ -39,8 +39,8 @@ flowchart TB
 Principles:
 1. **Append-only facts, derived views.** Events are never edited. Task ownership, status and the
    context digest are computed by replaying events, so there is nothing to keep in sync.
-2. **One file per writer.** The shard name is `actor.host.session.jsonl` under `events/YYYY-MM/`. Two devices never
-   append to the same file, so `git pull` never conflicts. (Same actor + host + session = same file, guarded by a lock.) The lock only coordinates processes on one checkout, so **identities must differ per device**: two checkouts using the same actor, host and session would append to the same file and conflict at sync. If `LEDGER_HOST` is set to a role alias, give each device its own alias.
+2. **One file per writer.** The shard name is `actor.host.session.<hash>.jsonl` under `events/YYYY-MM/`; the 8-hex hash is over the raw identity, so two identities whose readable slugs collide ("Claude Code" vs "claude-code") still get separate files. Two devices never
+   append to the same file, so `git pull` never conflicts. (Same actor + host + session = same file, guarded by a lock that records its owner process; a lock whose owner died on this host, or that outlived a 10-minute lease, is taken over, a live owner never is.) The lock only coordinates processes on one checkout, so **identities must differ per device**: two checkouts using the same actor, host and session would append to the same file and conflict at sync. If `LEDGER_HOST` is set to a role alias, give each device its own alias.
 3. **Validate on the way in, not on the way out.** A bad or secret-bearing event never reaches disk.
 4. **Small events, links not blobs.** An event is a sentence plus refs (file, commit, pr, issue, adr, diagram, url, asset, event).
    Large content stays in the repo or the diagram; the ledger points at it.
@@ -51,7 +51,7 @@ Principles:
 |---|---|---|
 | `v` | yes | Schema version, currently 1 |
 | `id` | yes | `<12 hex epoch-ms>-<4 hex counter><6 hex random>`; strictly increasing within a process |
-| `ts` | yes | UTC in exactly the `Date#toISOString` format; must be a real calendar date |
+| `ts` | yes | UTC in exactly the `Date#toISOString` format; must be a real calendar date (the JSON Schema pattern enforces this, leap years included) |
 | `project` | yes | Default `mapitout`; lets one ledger serve several projects |
 | `type` | yes | See below |
 | `summary` | yes | 1-500 chars, one sentence: what and why |
@@ -87,6 +87,8 @@ stateDiagram-v2
   open --> done: task.completed
   done --> [*]
 ```
+
+A completed task is terminal: later claim/progress/block/release events are refused on write and ignored when replayed. All `task.*` appends also take a ledger-wide lock so the owner check and the claim are atomic on one checkout.
 
 Ownership rules: only the owner can release a task (or a human actor, to free an abandoned claim). When the owner releases,
 the next claimant, if there is one, inherits it. A losing claimant who releases only withdraws its own claim; a release by
@@ -152,7 +154,7 @@ Measured on this sandbox with Node 22 (no tuning); re-run after changes that tou
 | Attribute | How it is met | Evidence |
 |---|---|---|
 | Reliability | Append-only; per-shard exclusive lock; verify checks hash, chain, schema, secrets, duplicate ids | Concurrency test: 8 parallel processes on one shard keep the chain intact; the same test fails with the lock removed |
-| Ordering | Monotonic ids within a process; replay equals write order | Regression test for same-millisecond events (a random tiebreak had scrambled them) |
+| Ordering | Monotonic ids within a process; shards are merged by `(ts, id)` but each shard keeps its own file (chain) order, so a backwards clock step can not reorder a writer's events | Regression test for same-millisecond events (a random tiebreak had scrambled them) |
 | Security | Secret scanner rejects keys/tokens/private keys on write and in verify; no personal or customer data by policy; shards written only through the library | Tests for 5 secret formats plus a data-field case |
 | Integrity | Tampering or deleting an event breaks the hash or chain and `verify` fails | Tamper and delete tests |
 | Maintainability | Zero dependencies; one validator is authoritative and the JSON Schema is generated from the same constants | Schema-sync test |

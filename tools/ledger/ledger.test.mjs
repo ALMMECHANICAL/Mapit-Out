@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { spawnSync } from 'node:child_process';
 import {
-	append, buildContext, canonical, deriveTasks, filterEvents, findSecrets, hashEvent,
-	parseSince, readAll, schema, shardPath, validate, verify
+	append, isIsoUtc, buildContext, canonical, deriveTasks, filterEvents, findSecrets, hashEvent,
+	parseSince, readAll, schema, shardPath, validate, verify, TS_PATTERN
 } from './ledger.mjs';
 
 const run = promisify(execFile);
@@ -306,4 +307,123 @@ test('committed JSON Schema is in sync with the code', () => {
 test('the repo ledger itself verifies', async () => {
 	const r = await verify({ dir: path.join(here, '..', '..', 'ledger') });
 	assert.equal(r.ok, true, r.problems.join('\n'));
+});
+
+// ---- review round 3 regressions
+
+async function plantLock(dir, actor, info) {
+	const file = shardPath(dir, actor);
+	await fs.mkdir(path.dirname(file), { recursive: true });
+	await fs.writeFile(file + '.lock', typeof info === 'string' ? info : JSON.stringify(info));
+	return file + '.lock';
+}
+const deadPid = () => { const r = spawnSync(process.execPath, ['-e', '']); return r.pid; };
+
+test('lock: a live owner is never robbed, even when the lock is old; waiting times out cleanly', async () => {
+	const dir = await tmp();
+	const lock = await plantLock(dir, A, { pid: process.pid, host: hostname(), token: 'x', t: Date.now() - 60000 });
+	await assert.rejects(append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 200 }), /timed out waiting for lock/);
+	assert.equal((await fs.readFile(lock, 'utf8')).includes('"token":"x"'), true, 'live owner lock must survive');
+});
+
+test('lock: a lock left by a dead process on this host is recovered at once', async () => {
+	const dir = await tmp();
+	await plantLock(dir, A, { pid: deadPid(), host: hostname(), token: 'dead', t: Date.now() });
+	await append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 2000 });
+	assert.equal((await verify({ dir })).ok, true);
+});
+
+test('lock: a lease-expired lock and an old unreadable lock are recovered; a fresh unreadable one is waited on', async () => {
+	let dir = await tmp();
+	await plantLock(dir, A, { pid: process.pid, host: 'some-other-host', token: 'old', t: Date.now() - 3600000 });
+	await append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 2000 });
+	dir = await tmp();
+	const lock = await plantLock(dir, A, 'garbage');
+	await assert.rejects(append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 150 }), /timed out/);
+	const old = new Date(Date.now() - 120000);
+	await fs.utimes(lock, old, old);
+	await append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 2000 });
+});
+
+test('claims by different actors racing in separate processes: exactly one wins', async () => {
+	const dir = await tmp();
+	await append({ type: 'task.created', summary: 'contended', task: 'race', actor: A }, { dir });
+	const claim = (name, i) => run('node', [CLI, 'append', '--type', 'task.claimed', '--summary', 'mine', '--task', 'race', '--actor', `${name}${i}`, '--host', `h${i}`],
+		{ env: { ...process.env, LEDGER_DIR: dir } }).then(() => 'won', () => 'lost');
+	const results = await Promise.all(Array.from({ length: 16 }, (_, i) => claim('racer', i)));
+	assert.equal(results.filter((r) => r === 'won').length, 1, results.join(','));
+	const t = deriveTasks(await readAll({ dir })).get('race');
+	assert.equal(t.contested.length, 0);
+	assert.equal((await verify({ dir })).ok, true);
+});
+
+test('claims by different actors racing in one process: exactly one wins (the interleaving that a per-shard lock alone does not stop)', async () => {
+	const dir = await tmp();
+	await append({ type: 'task.created', summary: 'contended', task: 'race2', actor: A }, { dir });
+	const results = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+		append({ type: 'task.claimed', summary: 'mine', task: 'race2', actor: { kind: 'agent', name: `r${i}`, host: `h${i}` } }, { dir }).then(() => 'won', () => 'lost')));
+	assert.equal(results.filter((r) => r === 'won').length, 1, results.join(','));
+	assert.equal(deriveTasks(await readAll({ dir })).get('race2').contested.length, 0);
+});
+
+test('a completed task is terminal: no claim, progress, block or release is accepted or changes derived state', async () => {
+	const dir = await tmp();
+	await append({ type: 'task.created', summary: 'x', task: 'd', actor: A }, { dir });
+	await append({ type: 'task.completed', summary: 'done', task: 'd', actor: A }, { dir });
+	for (const type of ['task.claimed', 'task.progress', 'task.blocked', 'task.released']) {
+		await assert.rejects(append({ type, summary: 'late', task: 'd', actor: B }, { dir }), /already completed/, type);
+	}
+	// events that arrive via sync after completion must not reopen it either
+	const evs = await readAll({ dir });
+	const late = { ...evs[1], id: 'ffffffffffff-0000000000', ts: '2999-01-01T00:00:00.000Z', type: 'task.claimed', actor: B };
+	const t = deriveTasks([...evs, late]).get('d');
+	assert.equal(t.status, 'done');
+});
+
+test('identities whose slugs collide still get separate shard files', async () => {
+	const dir = await tmp();
+	const x = { kind: 'agent', name: 'Claude Code', host: 'h', session: 's' }, y = { kind: 'agent', name: 'claude-code', host: 'h', session: 's' };
+	assert.notEqual(shardPath(dir, x), shardPath(dir, y));
+	await append({ type: 'note', summary: 'a', actor: x }, { dir });
+	await append({ type: 'note', summary: 'b', actor: y }, { dir });
+	const r = await verify({ dir });
+	assert.equal(r.shards, 2);
+	assert.equal(r.ok, true);
+});
+
+test('listShards surfaces I/O errors instead of reporting an empty ledger; stray files are ignored', async () => {
+	const dir = await tmp();
+	await fs.mkdir(path.join(dir, 'events'), { recursive: true });
+	await fs.writeFile(path.join(dir, 'events', '.DS_Store'), '');
+	assert.equal((await readAll({ dir })).length, 0);
+	await fs.mkdir(path.join(dir, 'events', '2026-10'));
+	await fs.chmod(path.join(dir, 'events', '2026-10'), 0o000);
+	if (process.getuid && process.getuid() !== 0) await assert.rejects(readAll({ dir }), /EACCES/);
+	await fs.chmod(path.join(dir, 'events', '2026-10'), 0o755);
+});
+
+test('readAll merges shards by (ts, id) but never reorders a shard (backwards clock step)', async () => {
+	const dir = await tmp();
+	const base = Date.parse('2026-10-04T10:00:00.000Z');
+	await append({ type: 'note', summary: 'a1', actor: A }, { dir, now: new Date(base + 5000) });
+	await append({ type: 'note', summary: 'a2-skewed', actor: A }, { dir, now: new Date(base + 1000) }); // clock stepped back
+	await append({ type: 'note', summary: 'b1', actor: B }, { dir, now: new Date(base + 3000) });
+	const order = (await readAll({ dir })).map((e) => e.summary);
+	assert.ok(order.indexOf('a1') < order.indexOf('a2-skewed'), order.join(','));
+	assert.equal((await verify({ dir })).ok, true);
+});
+
+test('JSON Schema ts pattern agrees with isIsoUtc on every day over ~300 years and on impossible dates', () => {
+	const re = new RegExp(TS_PATTERN);
+	for (let d = Date.UTC(1900, 0, 1); d < Date.UTC(2200, 0, 1); d += 864e5) {
+		const ts = new Date(d).toISOString();
+		assert.equal(re.test(ts), true, ts);
+		assert.equal(isIsoUtc(ts), true, ts);
+	}
+	for (const bad of ['2026-02-29T00:00:00.000Z', '2100-02-29T00:00:00.000Z', '2026-04-31T00:00:00.000Z', '2026-02-31T00:00:00.000Z', '2026-13-01T00:00:00.000Z',
+		'2026-00-10T00:00:00.000Z', '2026-01-00T00:00:00.000Z', '2026-01-01T24:00:00.000Z', '2026-01-01T00:60:00.000Z', '2026-01-01T00:00:00Z']) {
+		assert.equal(re.test(bad), false, bad);
+		assert.equal(isIsoUtc(bad), false, bad);
+	}
+	for (const good of ['2024-02-29T00:00:00.000Z', '2000-02-29T12:00:00.000Z']) assert.equal(re.test(good), true, good);
 });

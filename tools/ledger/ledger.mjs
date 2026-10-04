@@ -30,9 +30,14 @@ export const TOP_KEYS = ['v', 'id', 'ts', 'project', 'type', 'summary', 'actor',
 const ACTOR_KEYS = ['kind', 'name', 'model', 'host', 'session'];
 const REF_KEYS = ['kind', 'ref', 'note'];
 
-// Exactly the format Date#toISOString writes, and a real calendar date (Date.parse alone accepts 2026-02-31).
-function isIsoUtc(ts) {
-	if (typeof ts !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(ts)) return false;
+// Exactly the format Date#toISOString writes, restricted to real calendar dates (leap years included), so the
+// same pattern can go in the JSON Schema and non-JS validators reject 2026-02-31 too. (Date.parse alone accepts it.)
+const LEAP = '(?:\\d\\d(?:0[48]|[2468][048]|[13579][26])|(?:0[048]|[2468][048]|[13579][26])00)';
+export const TS_PATTERN = '^(?:\\d{4}-(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|\\d{4}-(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|\\d{4}-02-(?:0[1-9]|1\\d|2[0-8])|' + LEAP + '-02-29)' +
+	'T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}Z$';
+const TS_RE = new RegExp(TS_PATTERN);
+export function isIsoUtc(ts) {
+	if (typeof ts !== 'string' || !TS_RE.test(ts)) return false;
 	const t = Date.parse(ts); // NaN for month 13 etc.; toISOString would throw on that, and validate must never throw
 	return !Number.isNaN(t) && new Date(t).toISOString() === ts;
 }
@@ -163,7 +168,7 @@ export function schema() {
 		properties: {
 			v: { const: SCHEMA_VERSION },
 			id: { type: 'string', pattern: idPat },
-			ts: { type: 'string', format: 'date-time', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$', description: 'UTC, exactly as Date#toISOString writes it; must be a real calendar date.' },
+			ts: { type: 'string', format: 'date-time', pattern: TS_PATTERN, description: 'UTC, exactly as Date#toISOString writes it; must be a real calendar date.' },
 			project: { type: 'string', minLength: 1, maxLength: LIMITS.project },
 			type: { enum: EVENT_TYPES },
 			summary: { type: 'string', minLength: 1, maxLength: LIMITS.summary },
@@ -201,7 +206,9 @@ export function defaultDir() {
 
 export function shardPath(dir, actor, now = new Date()) {
 	const month = now.toISOString().slice(0, 7);
-	const file = [slug(actor.name), slug(actor.host, 'nohost'), slug(actor.session, 'default')].join('.') + '.jsonl';
+	// slug() is lossy ("A B" and "a-b" collapse), so a short hash of the raw identity keeps distinct writers in distinct files.
+	const id = createHash('sha256').update([actor.name, actor.host ?? '', actor.session ?? ''].join('\0')).digest('hex').slice(0, 8);
+	const file = [slug(actor.name), slug(actor.host, 'nohost'), slug(actor.session, 'default'), id].join('.') + '.jsonl';
 	return path.join(dir, 'events', month, file);
 }
 
@@ -227,54 +234,96 @@ async function lastLine(file) {
 	} finally { await fh.close(); }
 }
 
-// Cross-process lock via exclusive create. Lock files older than 30 s are treated as stale.
-async function withLock(file, fn) {
+// Cross-process lock via exclusive create. The lock file records its owner ({pid, host, token, t}).
+// A lock is stale (and may be taken over) when its owner process is gone (same host), when it outlived a
+// generous lease, or when it is unreadable and old. A live owner is never robbed, and release only removes
+// the lock if it is still ours, so a slow writer can not delete a successor's lock.
+const LOCK_LEASE_MS = 600000, LOCK_JUNK_MS = 30000;
+function pidAlive(pid) {
+	try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+async function readLock(lock) {
+	let text;
+	try { text = await fs.readFile(lock, 'utf8'); } catch { return null; }
+	try { return JSON.parse(text); } catch { return { junk: true }; }
+}
+async function lockIsStale(lock) {
+	const info = await readLock(lock);
+	if (!info) return false; // gone already; just retry
+	if (info.junk || typeof info.t !== 'number') {
+		try { return Date.now() - (await fs.stat(lock)).mtimeMs > LOCK_JUNK_MS; } catch { return false; }
+	}
+	if (info.host === hostname() && Number.isInteger(info.pid) && !pidAlive(info.pid)) return true;
+	return Date.now() - info.t > LOCK_LEASE_MS;
+}
+async function withLock(file, fn, { timeoutMs = 10000 } = {}) {
 	const lock = file + '.lock';
 	await fs.mkdir(path.dirname(file), { recursive: true });
-	const deadline = Date.now() + 10000;
+	const token = randomBytes(8).toString('hex');
+	const deadline = Date.now() + timeoutMs;
 	for (;;) {
-		try { await (await fs.open(lock, 'wx')).close(); break; } catch (e) {
+		try {
+			const fh = await fs.open(lock, 'wx');
+			try { await fh.writeFile(JSON.stringify({ pid: process.pid, host: hostname(), token, t: Date.now() })); } finally { await fh.close(); }
+			break;
+		} catch (e) {
 			if (e.code !== 'EEXIST') throw e;
-			try { if (Date.now() - (await fs.stat(lock)).mtimeMs > 30000) { await fs.unlink(lock); continue; } } catch { /* raced */ }
+			if (await lockIsStale(lock)) {
+				const before = await readLock(lock);
+				const now = await readLock(lock);
+				if (before && now && before.token === now.token) await fs.unlink(lock).catch(() => {});
+				continue;
+			}
 			if (Date.now() > deadline) throw new Error(`ledger: timed out waiting for lock ${lock}`);
 			await new Promise((r) => setTimeout(r, 15 + Math.random() * 25));
 		}
 	}
-	try { return await fn(); } finally { await fs.unlink(lock).catch(() => {}); }
+	try { return await fn(); } finally {
+		const info = await readLock(lock);
+		if (info && info.token === token) await fs.unlink(lock).catch(() => {});
+	}
 }
+
+const CLAIM_BLOCKED_ON_DONE = ['task.claimed', 'task.progress', 'task.blocked', 'task.released'];
 
 // Append one event. `input` has: type, summary, [actor], [project], [task], [parent], [refs], [data].
 // Actor defaults come from LEDGER_ACTOR / LEDGER_KIND / LEDGER_MODEL / LEDGER_HOST / LEDGER_SESSION.
-export async function append(input, { dir = defaultDir(), now = new Date() } = {}) {
+// Task events also take a ledger-wide lock (before the shard lock) so "check the owner, then claim" is atomic
+// across writers on one checkout; across devices a race is detected after sync (contested), not prevented.
+export async function append(input, { dir = defaultDir(), now = new Date(), lockTimeoutMs } = {}) {
 	const actor = { ...actorFromEnv(), ...(input.actor || {}) };
 	for (const k of Object.keys(actor)) if (actor[k] === undefined || actor[k] === '') delete actor[k];
 
-	const event = {
-		v: SCHEMA_VERSION, id: newId(now.getTime()), ts: now.toISOString(),
-		project: input.project || process.env.LEDGER_PROJECT || 'mapitout',
-		type: input.type, summary: input.summary, actor
-	};
-	for (const k of ['task', 'parent', 'refs', 'data']) if (input[k] !== undefined) event[k] = input[k];
-
-	// Reject unknown top-level keys early with a clear message.
-	const allowed = new Set([...Object.keys(event), 'task', 'parent', 'refs', 'data', 'actor', 'project']);
+	const allowed = new Set(['type', 'summary', 'task', 'parent', 'refs', 'data', 'actor', 'project']);
 	const extra = Object.keys(input).filter((k) => !allowed.has(k));
 	if (extra.length) throw new Error(`ledger: unknown field(s): ${extra.join(', ')}`);
 
 	const file = shardPath(dir, actor, now);
-	return withLock(file, async () => {
+	const lockOpts = { timeoutMs: lockTimeoutMs };
+	const write = () => withLock(file, async () => {
+		// id and ts are made inside the lock so a writer that waited does not stamp an older time than its predecessor
+		const event = {
+			v: SCHEMA_VERSION, id: newId(now.getTime()), ts: now.toISOString(),
+			project: input.project || process.env.LEDGER_PROJECT || 'mapitout',
+			type: input.type, summary: input.summary, actor
+		};
+		for (const k of ['task', 'parent', 'refs', 'data']) if (input[k] !== undefined) event[k] = input[k];
 		const prevLine = await lastLine(file);
 		event.prev = prevLine ? JSON.parse(prevLine).hash : null;
 		event.hash = hashEvent(event);
 		const errs = validate(event);
 		if (errs.length) throw new Error('ledger: invalid event: ' + errs.join('; '));
-		if (event.type === 'task.claimed') {
-			const owner = activeOwner(deriveTasks(await readAll({ dir })).get(event.task));
+		if (CLAIM_BLOCKED_ON_DONE.includes(event.type)) {
+			const task = deriveTasks(await readAll({ dir })).get(event.task);
+			if (task && task.status === 'done') throw new Error(`ledger: task ${event.task} is already completed`);
+			const owner = event.type === 'task.claimed' ? activeOwner(task) : null;
 			if (owner && owner !== actor.name) throw new Error(`ledger: task ${event.task} is already claimed by ${owner}`);
 		}
 		await fs.appendFile(file, JSON.stringify(event) + '\n', { flag: 'a' });
 		return event;
-	});
+	}, lockOpts);
+	if (typeof input.type === 'string' && input.type.startsWith('task.')) return withLock(path.join(dir, 'tasks'), write, lockOpts);
+	return write();
 }
 
 export function actorFromEnv(env = process.env) {
@@ -291,25 +340,37 @@ async function listShards(dir) {
 	const root = path.join(dir, 'events');
 	const out = [];
 	let months;
-	try { months = await fs.readdir(root); } catch (e) { if (e.code === 'ENOENT') return out; throw e; }
-	for (const m of months.sort()) {
-		const files = await fs.readdir(path.join(root, m)).catch(() => []);
+	try { months = await fs.readdir(root, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return out; throw e; }
+	for (const m of months.filter((d) => d.isDirectory()).map((d) => d.name).sort()) {
+		const files = await fs.readdir(path.join(root, m)); // a permission or I/O error must surface, not hide a month of events
 		for (const f of files.sort()) if (f.endsWith('.jsonl')) out.push(path.join(root, m, f));
 	}
 	return out;
 }
 
-// Reads every shard; returns events sorted by (ts, id). Unparseable lines are skipped here
-// and reported by verify().
+// Reads every shard and merges them by (ts, id). Each shard's own file order is kept (it is the hash-chain
+// order), so a device whose clock stepped backwards can not reorder its own events. Unparseable lines are
+// skipped here and reported by verify().
 export async function readAll({ dir = defaultDir() } = {}) {
-	const events = [];
+	const lists = [];
 	for (const file of await listShards(dir)) {
+		const evs = [];
 		for (const line of (await fs.readFile(file, 'utf8')).split('\n')) {
 			if (!line) continue;
-			try { events.push(JSON.parse(line)); } catch { /* reported by verify */ }
+			try { evs.push(JSON.parse(line)); } catch { /* reported by verify */ }
 		}
+		if (evs.length) lists.push(evs);
 	}
-	return events.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+	const idx = lists.map(() => 0), out = [];
+	const before = (a, b) => (a.ts < b.ts ? true : a.ts > b.ts ? false : a.id < b.id);
+	for (;;) {
+		let best = -1;
+		for (let i = 0; i < lists.length; i++) {
+			if (idx[i] < lists[i].length && (best < 0 || before(lists[i][idx[i]], lists[best][idx[best]]))) best = i;
+		}
+		if (best < 0) return out;
+		out.push(lists[best][idx[best]++]);
+	}
 }
 
 // Integrity check over every shard: JSON parses, schema valid, hash matches, chain unbroken,
@@ -349,6 +410,7 @@ export function deriveTasks(events) {
 		let t = tasks.get(ev.task);
 		if (!t) { t = { id: ev.task, title: null, status: 'open', owner: null, contested: [], last: ev, events: 0 }; tasks.set(ev.task, t); }
 		t.events++; t.last = ev;
+		if (t.status === 'done') continue; // completed is terminal: later events can not reopen or re-own it
 		switch (ev.type) {
 			case 'task.created': t.title = ev.summary; break;
 			case 'task.claimed':

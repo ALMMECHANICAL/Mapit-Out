@@ -94,7 +94,7 @@ cleared, and unreadable from a terminal or by a local model.
 The useful part of the idea is a **read cursor**: a tiny local token saying "this device has already read up to
 event X and note Y", so a session loads only what is new instead of re-reading everything.
 
-- Proposed form: `~/.config/mapitout/cursor.json` per device and project, `{ledgerEventId, lastNoteDate}`.
+- Proposed form: `~/.config/mapitout/cursor.json` per device and project, `{ledgerEventId, lastNotePath}` (a note path, not a date: several notes share a date, so a date would skip or repeat them).
 - Proposed use: `ledger context --since-cursor` and the same for notes. Not built.
 - For the product web app (Quick Quote), an ordinary session cookie holding an opaque id is normal and fine, but the
   memory itself stays server-side.

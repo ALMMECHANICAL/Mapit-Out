@@ -16,6 +16,6 @@ The product API, when it exists, wraps the same contract.
 - Only an HTTP API: rejected, forces every agent through a server we do not need yet.
 
 ## Consequences
-- Headless-first: UIs (this editor, Open WebUI) sit on top.
+- Headless-first for the ledger, memory and task tools: UIs (this editor, Open WebUI) sit on top. Diagram/canvas operations are not headless today: they need the running editor or a headless browser driving it. A browser-free diagram implementation is an OPEN option, not a decision.
 - Frontier models run on separate, scoped tasks and share state through the ledger (ADR 0004), not through one thread.
 - OPEN: which agent orchestrates the local models; the exact tool signatures.

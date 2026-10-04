@@ -28,11 +28,12 @@ date: YYYY-MM-DD
 device: <MY-DEVICE-NAME>
 surface: ...
 actor: <your tool or model name>
-project: <project name, or general>
+project: mapitout
 ---
 Then these sections, in this order: ## Decisions, ## Ideas, ## Open questions, ## Next actions, ## Links
 
 Rules:
+- Keep `project: mapitout` for Map It Out work (the id the `latest` filter matches); use `general` only for notes that span projects.
 - Use only what was said or done in this chat. Do not invent anything.
 - Under 2 KB. One short line per item.
 - For each decision give the reason. Mark half-formed ideas "(half-formed)".

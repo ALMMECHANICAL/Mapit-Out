@@ -4,7 +4,7 @@ Shared activity log for humans, agents and models. **Append only; write through 
 Design: [`docs/mapitout/ledger/DESIGN.md`](../docs/mapitout/ledger/DESIGN.md) · Decision: [ADR 0004](../docs/mapitout/adr/0004-shared-activity-ledger-jsonl-sharded-by-writer.md)
 
 ```
-events/YYYY-MM/<actor>.<host>.<session>.jsonl   one file per writer (no merge conflicts)
+events/YYYY-MM/<actor>.<host>.<session>.<hash>.jsonl   one file per writer (no merge conflicts)
 schema/event.v1.schema.json                     generated: node tools/ledger/cli.mjs schema
 ```
 

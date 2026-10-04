@@ -160,7 +160,9 @@ export async function listNotes(repo) {
 	const root = path.join(repo, 'inbox');
 	const out = [];
 	const walk = async (dir) => {
-		for (const ent of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+		let ents;
+		try { ents = await fs.readdir(dir, { withFileTypes: true }); } catch (e) { if (e.code === 'ENOENT') return; throw e; } // a permission/I-O error must not look like "no notes"
+		for (const ent of ents) {
 			const p = path.join(dir, ent.name);
 			if (ent.isDirectory()) await walk(p);
 			else if (ent.name.endsWith('.md')) {
@@ -176,9 +178,12 @@ export async function listNotes(repo) {
 
 // Newest notes, budgeted in characters (small local models have small context windows).
 export async function latest(repo, { project, n = 5, maxChars = 4000 } = {}) {
+	if (!Number.isInteger(n) || n < 1) throw new Error('memnote: n must be a positive integer');
+	if (!Number.isInteger(maxChars) || maxChars < 1) throw new Error('memnote: maxChars must be a positive integer');
 	let notes = await listNotes(repo);
-	if (project) notes = notes.filter((x) => x.meta.project === project || x.meta.project === 'general');
-	notes = notes.slice(-Math.max(1, n)); // slice(-0) would return every note
+	const want = project && project.toLowerCase();
+	if (want) notes = notes.filter((x) => { const p = String(x.meta.project).toLowerCase(); return p === want || p === 'general'; });
+	notes = notes.slice(-n);
 	const head = `# Recent session notes${project ? ` for ${project}` : ''} (${notes.length}, oldest first)\n`;
 	const blocks = notes.map((x) => `\n## ${x.meta.date} - ${x.meta.project} - ${x.meta.actor} on ${x.meta.device} (${x.meta.surface})\n${x.body.trim()}\n`);
 	let used = head.length, from = blocks.length;
@@ -190,7 +195,9 @@ export async function latest(repo, { project, n = 5, maxChars = 4000 } = {}) {
 		const room = Math.max(0, maxChars - head.length - omitted.length - 40);
 		kept = blocks[blocks.length - 1].slice(0, room).trimEnd() + '\n(newest note truncated to fit the budget)\n';
 	}
-	return head + omitted + kept;
+	const out = head + omitted + kept;
+	// hard limit: the header and omission note alone can exceed a very small budget
+	return out.length > maxChars ? out.slice(0, maxChars) : out;
 }
 
 export async function buildIndex(repo, { max = 200 } = {}) {
@@ -286,7 +293,9 @@ async function main() {
 		await requireRepo(repo);
 		const n = v.n === undefined ? 5 : Number(v.n);
 		if (!Number.isInteger(n) || n < 1) throw new Error('memnote: --n must be a positive integer');
-		process.stdout.write(await latest(repo, { project: v.project, n, maxChars: Number(v['max-chars'] || 4000) }));
+		const maxChars = v['max-chars'] === undefined ? 4000 : Number(v['max-chars']);
+		if (!Number.isInteger(maxChars) || maxChars < 1) throw new Error('memnote: --max-chars must be a positive integer');
+		process.stdout.write(await latest(repo, { project: v.project, n, maxChars }));
 	} else if (cmd === 'index') {
 		await requireRepo(repo);
 		await fs.writeFile(path.join(repo, 'index.md'), await buildIndex(repo));

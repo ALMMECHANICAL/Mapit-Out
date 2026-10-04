@@ -198,3 +198,20 @@ test('CLI end to end: init, template, check, save from a pasted stdin, latest', 
 	assert.match(run(['latest', '--repo', d, '--project', 'mapitout']).stdout, /Recent session notes/);
 	assert.equal(run(['latest', '--repo', await tmp()]).status, 1);
 });
+
+test('listNotes surfaces I/O errors; a missing inbox is just empty (regression: every error looked like "no notes")', async () => {
+	const d = await tmp();
+	assert.equal((await listNotes(d)).length, 0);
+	await fs.writeFile(path.join(d, 'inbox'), 'not a directory'); // ENOTDIR, which also fails as root unlike a chmod
+	await assert.rejects(listNotes(d), /ENOTDIR/);
+});
+
+test('latest: hard maxChars cap, positive-integer checks, case-insensitive project (regressions)', async () => {
+	const d = await repo();
+	await save(note({ project: 'MapItOut', body: 'x'.repeat(500) }), { repo: d });
+	assert.match(await latest(d, { project: 'mapitout', maxChars: 10000 }), /MapItOut/);
+	for (const budget of [1, 20, 60, 120]) assert.ok((await latest(d, { maxChars: budget })).length <= budget, String(budget));
+	await assert.rejects(latest(d, { maxChars: 0 }), /positive integer/);
+	await assert.rejects(latest(d, { maxChars: 1.5 }), /positive integer/);
+	await assert.rejects(latest(d, { n: 0 }), /positive integer/);
+});
