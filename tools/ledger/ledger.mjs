@@ -256,6 +256,22 @@ async function lockIsStale(lock) {
 	if (info.host === hostname() && Number.isInteger(info.pid) && !pidAlive(info.pid)) return true;
 	return Date.now() - info.t > LOCK_LEASE_MS;
 }
+// Taking over a stale lock must be exclusive, or two waiters can both judge it stale and the slower one then
+// unlinks the lock the faster one just created. Only the holder of the "<lock>.reap" mutex may unlink, and it
+// re-checks staleness under that mutex. (Residual: a live owner that outlived the 10-minute lease and releases
+// in the instant between the re-check and the unlink; a hung process, not a normal one.)
+async function reapStale(lock) {
+	const reap = lock + '.reap';
+	let fh;
+	try { fh = await fs.open(reap, 'wx'); } catch (e) {
+		if (e.code !== 'EEXIST') throw e;
+		try { if (Date.now() - (await fs.stat(reap)).mtimeMs > LOCK_JUNK_MS) await fs.unlink(reap); } catch { /* raced */ }
+		return false; // someone else is reaping; back off and retry (with the timeout check) instead of spinning
+	}
+	await fh.close();
+	try { if (await lockIsStale(lock)) await fs.unlink(lock).catch(() => {}); } finally { await fs.unlink(reap).catch(() => {}); }
+	return true;
+}
 async function withLock(file, fn, { timeoutMs = 10000 } = {}) {
 	const lock = file + '.lock';
 	await fs.mkdir(path.dirname(file), { recursive: true });
@@ -268,12 +284,7 @@ async function withLock(file, fn, { timeoutMs = 10000 } = {}) {
 			break;
 		} catch (e) {
 			if (e.code !== 'EEXIST') throw e;
-			if (await lockIsStale(lock)) {
-				const before = await readLock(lock);
-				const now = await readLock(lock);
-				if (before && now && before.token === now.token) await fs.unlink(lock).catch(() => {});
-				continue;
-			}
+			if (await lockIsStale(lock) && (await reapStale(lock))) continue; // took the stale lock away; retry the create at once
 			if (Date.now() > deadline) throw new Error(`ledger: timed out waiting for lock ${lock}`);
 			await new Promise((r) => setTimeout(r, 15 + Math.random() * 25));
 		}
@@ -361,16 +372,20 @@ export async function readAll({ dir = defaultDir() } = {}) {
 		}
 		if (evs.length) lists.push(evs);
 	}
-	const idx = lists.map(() => 0), out = [];
-	const before = (a, b) => (a.ts < b.ts ? true : a.ts > b.ts ? false : a.id < b.id);
-	for (;;) {
-		let best = -1;
-		for (let i = 0; i < lists.length; i++) {
-			if (idx[i] < lists[i].length && (best < 0 || before(lists[i][idx[i]], lists[best][idx[best]]))) best = i;
-		}
-		if (best < 0) return out;
-		out.push(lists[best][idx[best]++]);
+	// Min-heap over the shard heads: O(events log shards). Entries are [event, shardIndex].
+	const idx = lists.map(() => 1), out = [], heap = [];
+	const less = (x, y) => (x[0].ts < y[0].ts ? true : x[0].ts > y[0].ts ? false : x[0].id < y[0].id ? true : x[0].id > y[0].id ? false : x[1] < y[1]);
+	const up = (k) => { for (; k > 0; ) { const p = (k - 1) >> 1; if (!less(heap[k], heap[p])) break; [heap[k], heap[p]] = [heap[p], heap[k]]; k = p; } };
+	const down = (k) => { for (;;) { let m = k; const l = 2 * k + 1, r = l + 1; if (l < heap.length && less(heap[l], heap[m])) m = l; if (r < heap.length && less(heap[r], heap[m])) m = r; if (m === k) return; [heap[k], heap[m]] = [heap[m], heap[k]]; k = m; } };
+	lists.forEach((l, i) => { heap.push([l[0], i]); up(heap.length - 1); });
+	while (heap.length) {
+		const [ev, i] = heap[0];
+		out.push(ev);
+		if (idx[i] < lists[i].length) heap[0] = [lists[i][idx[i]++], i];
+		else { const last = heap.pop(); if (heap.length) heap[0] = last; }
+		down(0);
 	}
+	return out;
 }
 
 // Integrity check over every shard: JSON parses, schema valid, hash matches, chain unbroken,

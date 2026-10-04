@@ -398,7 +398,9 @@ test('listShards surfaces I/O errors instead of reporting an empty ledger; stray
 	assert.equal((await readAll({ dir })).length, 0);
 	await fs.mkdir(path.join(dir, 'events', '2026-10'));
 	await fs.chmod(path.join(dir, 'events', '2026-10'), 0o000);
-	if (process.getuid && process.getuid() !== 0) await assert.rejects(readAll({ dir }), /EACCES/);
+	// only assert when the chmod really blocks reads (root and DAC-bypass capabilities ignore it)
+	const blocked = await fs.readdir(path.join(dir, 'events', '2026-10')).then(() => false, () => true);
+	if (blocked) await assert.rejects(readAll({ dir }), /EACCES/);
 	await fs.chmod(path.join(dir, 'events', '2026-10'), 0o755);
 });
 
@@ -436,4 +438,43 @@ test('a writer that claimed twice offline queues once: one release does not hand
 		mk(5, '2026-10-04T10:00:04.000Z', d, 'task.released')]).get('t');
 	assert.equal(t.owner, null);
 	assert.equal(t.status, 'open');
+});
+
+test('many waiters reaping one stale lock: exactly one takes over and the chain stays intact (regression: two reapers could both unlink)', async () => {
+	const dir = await tmp();
+	const env = { ...process.env, LEDGER_DIR: dir, LEDGER_ACTOR: 'claude-code', LEDGER_HOST: 'cloud', LEDGER_SESSION: 'reap' };
+	const file = shardPath(dir, { name: 'claude-code', host: 'cloud', session: 'reap' });
+	await fs.mkdir(path.dirname(file), { recursive: true });
+	await fs.writeFile(file + '.lock', JSON.stringify({ pid: deadPid(), host: hostname(), token: 'dead', t: Date.now() }));
+	await Promise.all(Array.from({ length: 12 }, (_, i) => run('node', [CLI, 'append', '--type', 'note', '--summary', `reaper ${i}`], { env })));
+	const r = await verify({ dir });
+	assert.equal(r.ok, true, r.problems.join('\n'));
+	assert.equal(r.events, 12);
+});
+
+test('readAll merge scales with shards (heap, not a scan of every head per event)', async () => {
+	const dir = await tmp();
+	const base = Date.parse('2026-10-04T10:00:00.000Z');
+	for (let s = 0; s < 40; s++) for (let i = 0; i < 25; i++) {
+		await append({ type: 'note', summary: `s${s} e${i}`, actor: { kind: 'agent', name: `w${s}`, host: 'h' } }, { dir, now: new Date(base + i * 1000 + s) });
+	}
+	const evs = await readAll({ dir });
+	assert.equal(evs.length, 1000);
+	for (let i = 1; i < evs.length; i++) assert.ok(evs[i - 1].ts <= evs[i].ts, 'global order by ts');
+	for (let s = 0; s < 40; s++) {
+		const mine = evs.filter((e) => e.actor.name === `w${s}`).map((e) => e.summary);
+		assert.deepEqual(mine, Array.from({ length: 25 }, (_, i) => `s${s} e${i}`), 'per-shard order');
+	}
+});
+
+test('takeover of a stale lock is gated by the reap mutex: a waiter does not unlink while another reaper holds it (deterministic)', async () => {
+	const dir = await tmp();
+	const lock = await plantLock(dir, A, { pid: deadPid(), host: hostname(), token: 'dead', t: Date.now() });
+	await fs.writeFile(lock + '.reap', ''); // another process is mid-takeover
+	await assert.rejects(append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 200 }), /timed out/);
+	assert.equal((await fs.readFile(lock, 'utf8')).includes('"token":"dead"'), true, 'stale lock must be left for the reaper that holds the mutex');
+	const old = new Date(Date.now() - 120000); // a crashed reaper's mutex expires
+	await fs.utimes(lock + '.reap', old, old);
+	await append({ type: 'note', summary: 'n', actor: A }, { dir, lockTimeoutMs: 2000 });
+	assert.equal((await verify({ dir })).ok, true);
 });

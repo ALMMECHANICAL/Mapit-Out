@@ -37,3 +37,5 @@ Identity variables: `LEDGER_ACTOR`, `LEDGER_KIND` (human|agent|model|system), `L
 5. Claim a task before working on it; release it if you stop.
 
 Tests: `cd tools/ledger && node --test`.
+
+Refs to pull requests and issues should be repo-qualified (`pr:owner/repo#3`), not a bare number: events are immutable, so an ambiguous ref can never be corrected later.
