@@ -1,5 +1,5 @@
 # ADR 0007 - Cross-device session memory lives in a separate private repo of per-session notes
-Status: proposed      Date: 2026-10-04
+Status: accepted (phase 1 built: manual workflow)      Date: 2026-10-04
 
 ## Context
 Sessions run on several devices and three surfaces (terminal, desktop, cloud). Each has its own memory, so ideas and
@@ -23,4 +23,4 @@ Facts stay in the ledger. A per-device read cursor (not a cookie store) limits w
 - Private repo required; secrets never allowed; customer data excluded by default (OPEN).
 - Cloud sessions need the repo attached and the GitHub app to have write access.
 - Local models need an MCP tool or wrapper to write notes (OPEN).
-- Nothing is built yet; hooks, scripts, the cursor and the curator are future work.
+- The owner chose to start with a manual workflow (paste a prompt at the end of a chat, copy the note, file it with `tools/memory/memnote.mjs`) and to create the private repo personally. Hooks, the read cursor and the curator are future work.

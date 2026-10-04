@@ -1,6 +1,6 @@
 # Cross-device session memory - design (v0.1, proposed)
 
-Status: **proposed, nothing built.** Decision record: [ADR 0007](../adr/0007-session-memory-in-a-separate-private-repo.md).
+Status: **phase 1 built (manual workflow); hooks, curator and read cursor are designed only.** How to use it: [PROMPTS.md](PROMPTS.md). Code: `tools/memory/`. Decision record: [ADR 0007](../adr/0007-session-memory-in-a-separate-private-repo.md).
 Related: [shared activity ledger](../ledger/DESIGN.md) (facts), this document (narrative).
 
 ## 1. Problem
@@ -76,7 +76,15 @@ How each surface does step 1 and 2:
 | Claude Code terminal/desktop | SessionStart and Stop hooks (the Stop hook already exists to insist on pushing) | designed |
 | Cloud session | The memory repo must be attached to the session at start (or added mid-session) and the GitHub app needs write access to it. This session could not push until that was fixed. | designed; known constraint |
 | Local model (LM Studio) | Cannot push by itself: an MCP tool or wrapper writes the note | OPEN (same question as ledger design section 6) |
-| Owner by hand | A one-line script or shortcut that writes a note from a template | designed |
+| Owner by hand | Paste a prompt at the end of any chat, copy the note, file it with `memnote save` (checks the note, rejects secrets, commits, pushes). `memnote latest` prints the newest notes to paste at the next session start. | **built** ([PROMPTS.md](PROMPTS.md)) |
+
+### Phasing
+
+| Phase | Scope | State |
+|---|---|---|
+| 1 | Note template, `memnote` (init, template, check, save, latest, index), prompts, tests, CI | **built** |
+| 2 | Claude Code SessionStart and Stop hooks that pull and push notes; local-model MCP tool | designed |
+| 3 | Read cursor; curator pass; secret scan as a pre-commit hook in the memory repo | designed |
 
 ## 7. The "cookie" idea, evaluated
 
@@ -99,7 +107,8 @@ event X and note Y", so a session loads only what is new instead of re-reading e
 - **Drift and bloat.** Inbox grows forever; the curator pass and archiving keep reads cheap. A size budget for the session-start digest applies, as in the ledger.
 - **Unreviewed summaries.** Agent-written notes can be wrong; the curator pass is approved by the owner before it changes `projects/` or `notes/`.
 - **Single point of access.** If the GitHub app loses permission, sessions cannot push. Mirror plus the keep-and-retry rule limit the damage.
-- OPEN: repo name; whether notes are also written as ledger events; curator cadence; whether the ledger lives in this repo, the memory repo, or both.
+- **Host names.** Notes may name devices because the repo is private. The ledger records the machine name in event files, so if the project repo is public, set `LEDGER_HOST` to a role alias (for example `workstation`) instead of the real host name.
+- OPEN: repo name (suggested `memory`, created and made private by the owner); whether notes are also written as ledger events; curator cadence; whether the ledger lives in this repo, the memory repo, or both.
 
 ## 9. Parked ideas (not scheduled)
 

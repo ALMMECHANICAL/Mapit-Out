@@ -1,11 +1,11 @@
-name: Ledger CI
+name: Ledger and memory tools CI
 
 on:
   push:
     branches: [dev]
-    paths: ['tools/ledger/**', 'ledger/**', '.github/workflows/ledger.yml']
+    paths: ['tools/ledger/**', 'tools/memory/**', 'ledger/**', '.github/workflows/ledger.yml']
   pull_request:
-    paths: ['tools/ledger/**', 'ledger/**', '.github/workflows/ledger.yml']
+    paths: ['tools/ledger/**', 'tools/memory/**', 'ledger/**', '.github/workflows/ledger.yml']
 
 permissions:
   contents: read
@@ -21,6 +21,9 @@ jobs:
       - name: Unit and integration tests
         run: node --test
         working-directory: tools/ledger
+      - name: Memory note tool tests
+        run: node --test
+        working-directory: tools/memory
       - name: Verify the committed ledger (hashes, chains, schema, secrets)
         run: node tools/ledger/cli.mjs verify
       - name: JSON Schema is in sync with the code

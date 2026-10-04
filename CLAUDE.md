@@ -18,5 +18,6 @@ an AI mapping/estimating product, wired to local LLMs via LM Studio.
   -> quick diagram + quote -> client), electrical first. May split into its own product later.
 - Built: shared activity ledger (`tools/ledger/`, data in `ledger/`). Planned, NOT built: the agent tool surface/MCP adapter, session hooks, and any way for LM Studio to write to the ledger (OPEN). Local and frontier models are meant to share one tool contract; headless-first.
 - **At session start run `node tools/ledger/cli.mjs context`; end with a `handoff` event.** Rules: `ledger/README.md`. Never put secrets or customer data in events.
+- **End of a session:** if the owner asks for the session-end note, follow `docs/mapitout/memory/PROMPTS.md` (one Markdown code block, front matter plus five sections, no secrets). The owner files it into the private memory repo with `tools/memory/memnote.mjs`; do not assume you can push to that repo.
 - Decisions are ADRs in `docs/mapitout/adr/`; write the ADR before the code.
 - Design before code. Mark undecided points OPEN in the design doc; don't invent answers.

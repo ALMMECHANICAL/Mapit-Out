@@ -22,6 +22,8 @@ $L append --type handoff --summary "next actor should know ..."
 $L tasks            # derived task state     $L tail --n 20     $L verify
 ```
 
+If the project repo is public, set `LEDGER_HOST` to a role alias (for example `workstation`) so real machine names are not committed (they appear in event file names).
+
 Identity variables: `LEDGER_ACTOR`, `LEDGER_KIND` (human|agent|model|system), `LEDGER_MODEL`, `LEDGER_HOST`,
 `LEDGER_SESSION`, `LEDGER_PROJECT`; storage dir `LEDGER_DIR` (default `./ledger`).
 
