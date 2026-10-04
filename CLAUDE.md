@@ -11,3 +11,9 @@ an AI mapping/estimating product, wired to local LLMs via LM Studio.
 - API keys are config-only, never URL params (see comment in `Editor.js`).
 - Verify: serve `src/main/webapp` statically, open `mapitout.html`, check `Editor.aiModels` in the console.
 - Upstream docs for draw.io internals: `docs/claude/*.md`.
+
+## Product context (see `docs/mapitout/DESIGN.md` for detail)
+- Now: developer tool. Planned: Map It Quick Quote feature (voice + photos/measurements
+  -> quick diagram + quote -> client), electrical first. May split into its own product later.
+- Local (LM Studio) and frontier models share one tool contract and a shared activity ledger; headless-first.
+- Design before code. Mark undecided points OPEN in the design doc; don't invent answers.

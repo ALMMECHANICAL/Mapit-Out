@@ -49,6 +49,44 @@ fork**. It outputs read-only artifacts, not editable draw.io XML, and is large
 skill for agents; revisit a thin "export to editorial" action later. MIT permits
 reuse with the copyright notice kept.
 
+## Product context and direction (from owner, 2026-10-04)
+Captured as stated; items marked **OPEN** are not decided.
+
+**Positioning.** Today Map It Out is a **developer tool**: flow diagrams, architecture
+maps, design-first documentation for building the wider product set. It is intended to
+grow a separate **design/estimating feature** that comes from the *Map It Quick Quote*
+idea. Whether that becomes its own product later is **OPEN**; for now it is one
+codebase/business structure (an add-on), kept easy to split.
+
+**Map It Quick Quote (feature concept, not built).**
+- Voice-first: the user talks through a job; the system drafts a quick diagram plus quote.
+- Photos and measurements the user adds feed the drawing and the estimate.
+- Output is shown to the user first, then passed to their client (manual send, or
+  automatic send as an option - **OPEN**).
+- Early target trade: electrical design (circuits, sockets, rooms/floorplan layouts).
+  draw.io room/floorplan shapes and socket symbols cover the drawing side.
+- **OPEN**: voice stack (local STT vs hosted), pricing/rates source, where quotes are
+  stored and sent from, measurement units/accuracy rules, client-facing format.
+
+**Multi-model, shared-context orchestration (design intent).**
+- Local models (LM Studio) and frontier models (Claude, Gemini, others) all work against
+  the same tool contract (see Agent-agnostic principle) and the same project record.
+- An orchestrator agent (Claude is the intended one, **OPEN**) delegates to local
+  models/agents. Frontier models run on separate, scoped tasks, not mixed into one thread.
+- Every participant must see what the others did: a shared **activity/context ledger**
+  (who, which model, which task, inputs, outputs, diagram version) that any agent can
+  read before acting. This includes work done in LM Studio, so LM Studio sessions need
+  to write to (or be readable by) the ledger. Mechanism **OPEN** (file/db in repo,
+  MCP server, or LM Studio's API/logs).
+- **Headless-first**: the tool contract works with no UI; UIs sit on top. Candidate
+  front ends: this editor, Open WebUI (**OPEN**). Gemini is a candidate for Google
+  Workspace tasks only. Using fewer frontier models is fine; add one only when a
+  use case justifies it.
+
+**Design-first rule (owner).** Architecture, SDLC/DevOps, APIs, agent/skill workflows and
+documentation are designed and written before code, with reliability, security and
+maintainability measured up front. New features land as design docs/ADRs first.
+
 ## Constraints / risks
 - **CORS**: LM Studio server must have CORS enabled when the page is served from
   another origin. **Mixed content**: an https-hosted page cannot call http://localhost
