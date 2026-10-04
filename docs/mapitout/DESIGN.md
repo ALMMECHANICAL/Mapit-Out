@@ -28,6 +28,27 @@ Browser (mapitout.html)
 | models | `[{name, model}]` | `model` = id from `GET {baseUrl}/models` |
 | apiKey | `lm-studio` | placeholder; draw.io hides models with no key |
 
+## Agent-agnostic principle (decided)
+Map It Out is a tool any LLM or agent can use - LM Studio models, Claude, others -
+not a feature tied to one provider. Two integration surfaces, one tool contract:
+1. **Model backend** (built): `aiConfigs`/`aiModels` - the in-app chat calls any
+   OpenAI-compatible endpoint. Add a model = add an entry.
+2. **Agent tool surface** (design, not built): draw.io's embed message API
+   (`EditorUi.js` handles `load`, `merge`, `export`, `layout`, `template`, `dialog`,
+   `status` actions via postMessage) lets an agent read/write the live canvas
+   in the app, no model API needed. Plan: one thin tool contract
+   (`get_diagram`, `apply_xml`/`merge`, `layout`, `export`) exposed as
+   (a) window postMessage, (b) an MCP server bridge for Claude Code and others.
+   Product-side API comes later and wraps the same contract.
+
+## Related work: diagram-design (cathrynlavery/diagram-design, MIT)
+Skill/plugin that generates presentation-grade static HTML/SVG diagrams (47 types)
+and redraws draw.io/Mermaid/Excalidraw files. Decision: **do not vendor into this
+fork**. It outputs read-only artifacts, not editable draw.io XML, and is large
+(screenshots, icon vendor dir, ~40 verify scripts). Use it as a separate installed
+skill for agents; revisit a thin "export to editorial" action later. MIT permits
+reuse with the copyright notice kept.
+
 ## Constraints / risks
 - **CORS**: LM Studio server must have CORS enabled when the page is served from
   another origin. **Mixed content**: an https-hosted page cannot call http://localhost
