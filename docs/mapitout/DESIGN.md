@@ -91,6 +91,7 @@ maintainability measured up front. New features land as design docs/ADRs first.
 - **CORS**: LM Studio server must have CORS enabled when the page is served from
   another origin. **Mixed content**: an https-hosted page cannot call http://localhost
   in some browsers - serve over http locally or put a TLS reverse proxy in front.
+- **Saved-config isolation**: `settingsName: 'mapitout'` moves browser-saved config/settings to `.mapitout-*` keys, so a stock draw.io `.configuration` on the same origin cannot restore a cloud AI endpoint/key/model. Verified with a hostile saved config.
 - **Key handling**: the key slot is shared with draw.io's `gpt` config, so a real
   OpenAI key set via `gptApiKey` would be sent to the LM Studio URL. Keep it a placeholder.
 - **Trademark**: README forbids using/modifying the draw.io name or logo for our

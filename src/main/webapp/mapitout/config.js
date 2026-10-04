@@ -26,6 +26,9 @@
 
 	window.MAPITOUT_CONFIG = Object.assign({}, window.MAPITOUT_CONFIG, {
 		enableAi: true,
+		// Separate storage namespace: a stock editor's saved '.configuration' (same origin)
+		// must never override the local-only AI backend below.
+		settingsName: 'mapitout',
 		// Re-uses draw.io's built-in 'gpt' key slot (OpenAI-compatible request
 		// shape) and points it at LM Studio. Gemini/Claude/GPT cloud models are
 		// removed so nothing leaves the machine by default.
