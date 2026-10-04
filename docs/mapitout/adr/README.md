@@ -11,6 +11,7 @@ deleted: a changed decision gets a new ADR that supersedes the old one.
 | [0004](0004-shared-activity-ledger-jsonl-sharded-by-writer.md) | Shared activity ledger: append-only JSONL, one file per writer, in git | accepted (core built) |
 | [0005](0005-diagram-design-stays-a-separate-skill.md) | `diagram-design` stays a separate skill, not vendored | accepted |
 | [0006](0006-quick-quote-is-a-feature-may-split-later.md) | Map It Quick Quote is a feature in this codebase and may split later | proposed |
+| [0007](0007-session-memory-in-a-separate-private-repo.md) | Cross-device session memory lives in a separate private repo of per-session notes | proposed |
 
 ## Template
 

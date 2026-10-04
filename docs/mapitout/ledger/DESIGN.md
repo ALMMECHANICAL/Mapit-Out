@@ -175,7 +175,7 @@ Honest limits:
 
 ## 9. Related, planned work
 
-- **Memory repo (separate, planned by the owner).** A repo for long-running context across devices and chats.
+- **Memory repo (separate, planned by the owner; design: [memory/DESIGN.md](../memory/DESIGN.md), [ADR 0007](../adr/0007-session-memory-in-a-separate-private-repo.md)).** A repo for long-running context across devices and chats.
   The ledger is deliberately portable (plain files, no server) so it can move into or sit beside that repo.
   Whether they merge is OPEN. The earlier lost *asset register* is the motivating example: `asset.registered`
   events are the proposed way to make it rebuildable.
