@@ -8,7 +8,7 @@ tied to one provider, and an agent should be able to work in the app itself, not
 ## Decision
 Two integration surfaces behind one tool contract:
 1. **Model backend (built):** the in-app chat calls any OpenAI-compatible endpoint. Adding a model is one config entry.
-2. **Agent tool surface (designed):** draw.io's embed message API (`load`, `merge`, `export`, `layout`, `template`, `dialog`, `status`) lets an agent read and write the live canvas. A thin contract (`get_diagram`, `apply_xml`, `layout`, `export`) is exposed as window messages and as an MCP server.
+2. **Agent tool surface (designed):** draw.io's embed message API (`load`, `merge`, `export`, `layout`, `template`, `dialog`, `status`) lets an agent read and write the live canvas. A thin contract (`get_diagram`, `apply_xml`, `layout`, `export`) will be exposed as window messages and as an MCP server.
 The product API, when it exists, wraps the same contract.
 
 ## Alternatives

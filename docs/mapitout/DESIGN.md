@@ -93,7 +93,7 @@ maintainability measured up front. New features land as design docs/ADRs first.
 
 ## Decisions and further design
 - ADRs: [`adr/`](adr/README.md) (0001 design-first, 0002 configure not patch, 0003 agnostic tool contract,
-  0004 ledger, 0005 diagram-design, 0006 Quick Quote).
+  0004 ledger, 0005 diagram-design, 0006 Quick Quote, 0007 session memory).
 - Shared activity ledger: [`ledger/DESIGN.md`](ledger/DESIGN.md) (built: library, CLI, schema, tests, CI).
 - Planned, separate: a memory repo for long-running context across devices; may sit beside or absorb the ledger (OPEN).
 

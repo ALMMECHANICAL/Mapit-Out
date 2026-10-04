@@ -17,7 +17,7 @@ Tool: `tools/memory/memnote.mjs` (Node 18+, no install). Design: [DESIGN.md](DES
 
 ## End of a chat: get the note
 
-Paste this to the model, filling in the device name once (copy it into a text snippet so you only do it once):
+Paste this to the model, replacing `<MY-DEVICE-NAME>` with your device name once (copy it into a text snippet so you only do it once). The tool refuses a note that still has `<...>` placeholders, `...` or `YYYY` in its front matter, so an unfilled one cannot be saved by accident:
 
 ```
 Write my session-end note for my memory repo. Reply with ONE Markdown code block and nothing else.
@@ -25,7 +25,7 @@ Write my session-end note for my memory repo. Reply with ONE Markdown code block
 Start with this front matter (date = today, YYYY-MM-DD; surface = terminal | desktop | cloud | local-model | web | mobile | other):
 ---
 date: YYYY-MM-DD
-device: MY-DEVICE-NAME
+device: <MY-DEVICE-NAME>
 surface: ...
 actor: <your tool or model name>
 project: <project name, or general>
@@ -56,13 +56,15 @@ Leave off `--commit --push` to only write the file and commit it yourself. Use `
 The tool refuses a note with missing fields, a bad date, an unfilled template, or anything that looks like a secret,
 and tells you what to fix. If the push fails (offline), the note is already saved and committed; push it later.
 
-Check a note without saving: `... memnote.mjs check` (reads the clipboard text on stdin).
+Check a note without saving: pipe the clipboard text to `check`, for example `pbpaste | node ~/Mapit-Out/tools/memory/memnote.mjs check` on macOS (the other systems use the clipboard command from the table above).
 
 ## Start of a chat: give the model the recent notes
 
 ```
-node ~/Mapit-Out/tools/memory/memnote.mjs latest --repo ~/memory --project mapitout --max-chars 4000
+git -C ~/memory pull --rebase; node ~/Mapit-Out/tools/memory/memnote.mjs latest --repo ~/memory --project mapitout --max-chars 4000
 ```
+
+The `pull` fetches notes saved from your other devices (if you are offline it fails and you still get the local notes).
 
 Paste the output into the new chat after this line:
 

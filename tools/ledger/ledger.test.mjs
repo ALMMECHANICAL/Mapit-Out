@@ -82,6 +82,20 @@ test('secrets are rejected on write and detected by verify', async () => {
 	assert.equal((await readAll({ dir })).length, 0);
 });
 
+test('verify itself catches a secret that reached a shard some other way (forged but correctly chained)', async () => {
+	const dir = await tmp();
+	const ok = await append({ type: 'note', summary: 'clean', actor: A }, { dir });
+	const file = shardPath(dir, A, new Date(ok.ts));
+	const leaked = { ...ok, id: ok.id.slice(0, 13) + '0001' + ok.id.slice(17), summary: 'oops sk-abcdefghijklmnop1234567890', prev: ok.hash };
+	delete leaked.hash;
+	leaked.hash = hashEvent(leaked); // chain and hash are consistent: only the secret scan can object
+	await fs.appendFile(file, JSON.stringify(leaked) + '\n');
+	const r = await verify({ dir });
+	assert.equal(r.ok, false);
+	assert.match(r.problems.join('\n'), /possible secret/);
+	assert.doesNotMatch(r.problems.join('\n'), /chain broken|hash does not match/);
+});
+
 test('validation rejects bad input', async () => {
 	const dir = await tmp();
 	await assert.rejects(append({ type: 'nope', summary: 'x', actor: A }, { dir }), /type must be/);
@@ -230,6 +244,40 @@ test('ts must be a real calendar date in the exact ISO format (Date.parse alone 
 		assert.match(validate(bad).join(), /ts must be/, ts);
 	}
 	assert.deepEqual(validate(good), []);
+});
+
+test('context digest honours the budget even when the fixed sections alone would not fit (regression: could exceed --max-chars)', () => {
+	const now = Date.now();
+	const events = [];
+	for (let i = 0; i < 200; i++) {
+		events.push({ v: 1, id: (now - 1000 + i).toString(16).padStart(12, '0') + '-0000000000', ts: new Date(now - 1000 + i).toISOString(), project: 'p', type: 'task.created', task: `task-${i}`, summary: 'long title '.repeat(40), actor: A });
+	}
+	for (const maxChars of [400, 1500, 6000]) {
+		const out = buildContext(events, { maxChars, now });
+		assert.ok(out.length <= maxChars, `maxChars ${maxChars}: got ${out.length}`);
+	}
+	const big = buildContext(events, { maxChars: 6000, now });
+	assert.match(big, /\+175 more open tasks/);
+});
+
+test('CLI tail --n: zero returns nothing, invalid is an error (regression: slice(-0) returned the whole ledger)', async () => {
+	const dir = await tmp();
+	const env = { ...process.env, LEDGER_DIR: dir, LEDGER_ACTOR: 'claude-code', LEDGER_HOST: 'cloud' };
+	for (let i = 0; i < 3; i++) await run('node', [CLI, 'append', '--type', 'note', '--summary', `n${i}`], { env });
+	const out = (args) => run('node', [CLI, 'tail', '--json', ...args], { env }).then((r) => JSON.parse(r.stdout));
+	assert.equal((await out(['--n', '0'])).length, 0);
+	assert.equal((await out(['--n', '2'])).length, 2);
+	assert.equal((await out([])).length, 3);
+	await assert.rejects(run('node', [CLI, 'tail', '--n', 'abc'], { env }), /non-negative integer/);
+	await assert.rejects(run('node', [CLI, 'tail', '--n=-1'], { env }), /non-negative integer/);
+	await assert.rejects(run('node', [CLI, 'tail', '--n', '-1'], { env }), (e) => /ambiguous/.test(e.stderr) && !/at .*node:internal/.test(e.stderr)); // clean message, no stack trace
+});
+
+test('schema requires non-empty strings wherever validate() does', () => {
+	const s = schema();
+	assert.equal(s.properties.refs.items.properties.ref.minLength, 1);
+	assert.equal(s.properties.refs.items.properties.note.minLength, 1);
+	for (const k of ['model', 'host', 'session']) assert.equal(s.properties.actor.properties[k].minLength, 1);
 });
 
 test('filters and since parsing', async () => {

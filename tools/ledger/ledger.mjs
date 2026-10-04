@@ -172,9 +172,9 @@ export function schema() {
 				properties: {
 					kind: { enum: ACTOR_KINDS },
 					name: { type: 'string', minLength: 1, maxLength: LIMITS.name },
-					model: { type: 'string', maxLength: LIMITS.name },
-					host: { type: 'string', maxLength: LIMITS.name },
-					session: { type: 'string', maxLength: LIMITS.name }
+					model: { type: 'string', minLength: 1, maxLength: LIMITS.name },
+					host: { type: 'string', minLength: 1, maxLength: LIMITS.name },
+					session: { type: 'string', minLength: 1, maxLength: LIMITS.name }
 				}
 			},
 			task: { type: 'string', minLength: 1, maxLength: LIMITS.task },
@@ -183,7 +183,7 @@ export function schema() {
 				type: 'array', maxItems: LIMITS.refs,
 				items: {
 					type: 'object', additionalProperties: false, required: ['kind', 'ref'],
-					properties: { kind: { enum: REF_KINDS }, ref: { type: 'string', maxLength: LIMITS.refText }, note: { type: 'string', maxLength: LIMITS.refText } }
+					properties: { kind: { enum: REF_KINDS }, ref: { type: 'string', minLength: 1, maxLength: LIMITS.refText }, note: { type: 'string', minLength: 1, maxLength: LIMITS.refText } }
 				}
 			},
 			data: { type: 'object', description: `Small type-specific payload, at most ${LIMITS.dataBytes} bytes serialised.` },
@@ -396,7 +396,9 @@ export function filterEvents(events, { type, actor, task, project, since } = {})
 }
 
 const short = (id) => id.slice(-6);
-const line = (e) => `- ${e.ts.slice(0, 16).replace('T', ' ')} [${e.type}] ${e.actor.name}${e.actor.model ? ' (' + e.actor.model + ')' : ''}${e.task ? ' #' + e.task : ''}: ${e.summary} (${short(e.id)})`;
+const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + '\u2026' : s);
+const line = (e) => `- ${e.ts.slice(0, 16).replace('T', ' ')} [${e.type}] ${e.actor.name}${e.actor.model ? ' (' + e.actor.model + ')' : ''}${e.task ? ' #' + e.task : ''}: ${trunc(e.summary, 200)} (${short(e.id)})`;
+const MAX_TASK_LINES = 25;
 
 // Digest any model can read at the start of a session. Budgeted in characters so a small local
 // model's context window is respected: the header, open tasks and decisions are always kept;
@@ -412,9 +414,10 @@ export function buildContext(events, { since = '14d', maxChars = 6000, project, 
 	const fixed = [];
 	fixed.push('## Open tasks');
 	if (!tasks.length) fixed.push('(none)');
-	for (const t of tasks) {
-		fixed.push(`- #${t.id} [${t.status}]${t.owner ? ' owner: ' + t.owner : ''}${t.title ? ' - ' + t.title : ''}${t.contested.length ? ` (CONTESTED by ${t.contested.join(', ')})` : ''}`);
+	for (const t of tasks.slice(0, MAX_TASK_LINES)) {
+		fixed.push(`- #${t.id} [${t.status}]${t.owner ? ' owner: ' + t.owner : ''}${t.title ? ' - ' + trunc(t.title, 160) : ''}${t.contested.length ? ` (CONTESTED by ${t.contested.join(', ')})` : ''}`);
 	}
+	if (tasks.length > MAX_TASK_LINES) fixed.push(`(+${tasks.length - MAX_TASK_LINES} more open tasks; use \`ledger tasks\`)`);
 	fixed.push('', '## Latest handoffs');
 	if (!handoffs.length) fixed.push('(none)');
 	handoffs.forEach((e) => fixed.push(line(e)));
@@ -429,5 +432,10 @@ export function buildContext(events, { since = '14d', maxChars = 6000, project, 
 	while (from > 0 && used + acts[from - 1].length + 1 <= maxChars) { from--; used += acts[from].length + 1; }
 	const kept = acts.slice(from), dropped = from;
 	const note = dropped ? [`(${dropped} older line(s) omitted to fit the ${maxChars}-character budget; use \`ledger tail\` for more)`] : [];
-	return [base, ...note, ...(kept.length ? kept : ['(none)'])].join('\n') + '\n';
+	let out = [base, ...note, ...(kept.length ? kept : ['(none)'])].join('\n') + '\n';
+	// Hard limit: the fixed sections are bounded (25 task lines, 3 hand-offs, 10 decisions, 200-char summaries) but a very small
+	// budget can still be smaller than they are, so cut the tail rather than exceed what the caller asked for.
+	const CUT = '\n(truncated to fit the budget)\n';
+	if (out.length > maxChars) out = out.slice(0, Math.max(0, maxChars - CUT.length)) + CUT;
+	return out;
 }

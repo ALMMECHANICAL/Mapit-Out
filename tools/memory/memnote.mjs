@@ -72,6 +72,9 @@ export function validateNote(text) {
 		if (meta.date && !isRealDate(meta.date)) errors.push('date must be a real calendar date, YYYY-MM-DD');
 		if (meta.surface && !SURFACES.includes(meta.surface)) errors.push(`surface must be one of: ${SURFACES.join(', ')}`);
 		for (const k of ['device', 'actor', 'project']) if (meta[k] && meta[k].length > 80) errors.push(`${k} too long`);
+		for (const [k, val] of Object.entries(meta)) {
+			if (/[<>]/.test(val) || val === '...' || /^YYYY/i.test(val)) errors.push(`front matter "${k}" still holds placeholder text (${val}); fill it in`);
+		}
 	}
 	const headings = [...body.matchAll(/^##\s+(.+?)\s*$/gm)].map((h) => h[1].replace(/\s*\(.*\)$/, '').trim().toLowerCase());
 	if (!SECTIONS.some((s) => headings.includes(s.toLowerCase()))) warnings.push(`no recognised sections (${SECTIONS.join(', ')})`);
@@ -175,7 +178,7 @@ export async function listNotes(repo) {
 export async function latest(repo, { project, n = 5, maxChars = 4000 } = {}) {
 	let notes = await listNotes(repo);
 	if (project) notes = notes.filter((x) => x.meta.project === project || x.meta.project === 'general');
-	notes = notes.slice(-n);
+	notes = notes.slice(-Math.max(1, n)); // slice(-0) would return every note
 	const head = `# Recent session notes${project ? ` for ${project}` : ''} (${notes.length}, oldest first)\n`;
 	const blocks = notes.map((x) => `\n## ${x.meta.date} - ${x.meta.project} - ${x.meta.actor} on ${x.meta.device} (${x.meta.surface})\n${x.body.trim()}\n`);
 	let used = head.length, from = blocks.length;
@@ -241,14 +244,16 @@ async function readInput(file) {
 }
 
 async function main() {
-	const { values: v, positionals } = parseArgs({
+	let parsed;
+	try { parsed = parseArgs({
 		allowPositionals: true,
 		options: {
 			repo: { type: 'string' }, project: { type: 'string' }, surface: { type: 'string' }, actor: { type: 'string' }, device: { type: 'string' },
 			n: { type: 'string' }, 'max-chars': { type: 'string' }, git: { type: 'boolean' },
 			commit: { type: 'boolean' }, push: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, help: { type: 'boolean', short: 'h' }
 		}
-	});
+	}); } catch (e) { throw new Error(`memnote: ${e.message}`); }
+	const { values: v, positionals } = parsed;
 	const [cmd, arg] = positionals;
 	const repo = path.resolve(v.repo || process.env.MEMORY_REPO || '.');
 	if (!cmd || v.help || cmd === 'help') {
@@ -279,7 +284,9 @@ async function main() {
 		if (r.written && !r.committed) console.log(`next: git -C ${repo} add inbox && git -C ${repo} commit -m "note" && git -C ${repo} push`);
 	} else if (cmd === 'latest') {
 		await requireRepo(repo);
-		process.stdout.write(await latest(repo, { project: v.project, n: Number(v.n || 5), maxChars: Number(v['max-chars'] || 4000) }));
+		const n = v.n === undefined ? 5 : Number(v.n);
+		if (!Number.isInteger(n) || n < 1) throw new Error('memnote: --n must be a positive integer');
+		process.stdout.write(await latest(repo, { project: v.project, n, maxChars: Number(v['max-chars'] || 4000) }));
 	} else if (cmd === 'index') {
 		await requireRepo(repo);
 		await fs.writeFile(path.join(repo, 'index.md'), await buildIndex(repo));

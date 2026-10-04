@@ -52,6 +52,23 @@ test('validateNote accepts a good note and rejects each kind of bad one', () => 
 	assert.match(warn.warnings.join(), /aim for under/);
 });
 
+test('front-matter placeholders left unfilled are rejected (regression: a literal "<project...>" project saved fine)', () => {
+	for (const [k, v] of [['project', '<project name, or general>'], ['device', '<MY-DEVICE-NAME>'], ['actor', '<your tool or model name>'], ['date', 'YYYY-MM-DD']]) {
+		const text = note().replace(new RegExp(`^${k}: .*$`, 'm'), `${k}: ${v}`);
+		assert.equal(validateNote(text).ok, false, `${k}: ${v} should be rejected`);
+	}
+	assert.match(validateNote(note().replace('surface: terminal', 'surface: ...')).errors.join(), /placeholder|surface/);
+});
+
+test('CLI latest --n: zero is rejected, not "everything" (slice(-0) trap)', async () => {
+	const d = await repo();
+	await save(note(), { repo: d });
+	const run = (args) => spawnSync('node', [CLI, ...args], { encoding: 'utf8' });
+	assert.equal(run(['latest', '--repo', d, '--n', '0']).status, 1);
+	assert.equal(run(['latest', '--repo', d, '--n', 'x']).status, 1);
+	assert.equal(run(['latest', '--repo', d, '--n', '1']).status, 0);
+});
+
 test('template validates once the placeholder text is replaced, and prefills fields', () => {
 	const t = template({ project: 'quick-quote', surface: 'cloud', actor: 'someone', device: 'laptop', date: '2026-10-04' });
 	assert.match(t, /project: quick-quote/);

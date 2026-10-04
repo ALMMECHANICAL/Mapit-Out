@@ -73,10 +73,10 @@ How each surface does step 1 and 2:
 
 | Surface | Mechanism | State |
 |---|---|---|
-| Claude Code terminal/desktop | SessionStart and Stop hooks (the Stop hook already exists to insist on pushing) | designed |
+| Claude Code terminal/desktop | SessionStart and Stop hooks that pull and push notes | designed, not built |
 | Cloud session | The memory repo must be attached to the session at start (or added mid-session) and the GitHub app needs write access to it. This session could not push until that was fixed. | designed; known constraint |
 | Local model (LM Studio) | Cannot push by itself: an MCP tool or wrapper writes the note | OPEN (same question as ledger design section 6) |
-| Owner by hand | Paste a prompt at the end of any chat, copy the note, file it with `memnote save` (checks the note, rejects secrets, commits, pushes). `memnote latest` prints the newest notes to paste at the next session start. | **built** ([PROMPTS.md](PROMPTS.md)) |
+| Owner by hand | Paste a prompt at the end of any chat, copy the note, file it with `memnote save --commit --push` (checks the note, rejects secrets and unfilled placeholders, commits, pushes; without the flags it only writes the file). `memnote latest` prints the newest notes to paste at the next session start. | **built** ([PROMPTS.md](PROMPTS.md)) |
 
 ### Phasing
 

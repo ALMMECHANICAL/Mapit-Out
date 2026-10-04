@@ -13,7 +13,7 @@
 
 import { parseArgs } from 'node:util';
 import {
-	EVENT_TYPES, append, buildContext, deriveTasks, filterEvents, readAll, schema, verify
+	EVENT_TYPES, append, buildContext, defaultDir, deriveTasks, filterEvents, readAll, schema, verify
 } from './ledger.mjs';
 
 const HELP = `usage: ledger <command> [options]
@@ -22,7 +22,7 @@ commands:
   append    --type <${EVENT_TYPES.join('|')}> --summary <text>
             [--task id] [--parent eventId] [--ref kind:ref]... [--data json]
             [--actor name] [--kind human|agent|model|system] [--model m] [--host h] [--session s] [--project p]
-  tail      [--n 20] [--type t] [--actor a] [--task id] [--since 7d|ISO] [--json]
+  tail      [--n 20] [--type t] [--actor a] [--task id] [--since 7d|ISO] [--project p] [--json]
   context   [--since 14d] [--max-chars 6000] [--project p]    markdown digest for a model to read first
   tasks     [--json]                                           derived task state (owner, status, contested)
   verify                                                       check hashes, chains, schema, secrets
@@ -31,7 +31,9 @@ commands:
 
 function die(msg, code = 1) { console.error(msg); process.exit(code); }
 
-const { values: v, positionals } = parseArgs({
+let v, positionals;
+try {
+	({ values: v, positionals } = parseArgs({
 	allowPositionals: true,
 	options: {
 		type: { type: 'string' }, summary: { type: 'string' }, task: { type: 'string' }, parent: { type: 'string' },
@@ -41,7 +43,11 @@ const { values: v, positionals } = parseArgs({
 		n: { type: 'string' }, since: { type: 'string' }, 'max-chars': { type: 'string' }, json: { type: 'boolean' },
 		help: { type: 'boolean', short: 'h' }
 	}
-});
+}));
+} catch (e) {
+	die(`${e.message}\n\n${HELP}`); // e.g. a missing value or an option that needs --opt=value
+}
+
 
 const cmd = positionals[0];
 if (!cmd || v.help || cmd === 'help') { process.stdout.write(HELP); process.exit(cmd || v.help ? 0 : 1); }
@@ -71,7 +77,10 @@ try {
 		console.log(v.json ? JSON.stringify(ev) : `ok ${ev.id} ${ev.type}`);
 	} else if (cmd === 'tail') {
 		const all = await readAll();
-		const rows = filterEvents(all, { type: v.type, actor: v.actor, task: v.task, project: v.project, since: v.since }).slice(-Number(v.n || 20));
+		const count = v.n === undefined ? 20 : Number(v.n);
+		if (!Number.isInteger(count) || count < 0) die('--n must be a non-negative integer');
+		const filtered = filterEvents(all, { type: v.type, actor: v.actor, task: v.task, project: v.project, since: v.since });
+		const rows = count === 0 ? [] : filtered.slice(-count); // slice(-0) would return everything
 		console.log(v.json ? JSON.stringify(rows, null, 2) : rows.map(fmt).join('\n') || '(no events)');
 	} else if (cmd === 'context') {
 		process.stdout.write(buildContext(await readAll(), { since: v.since || '14d', maxChars: Number(v['max-chars'] || 6000), project: v.project }));
@@ -81,7 +90,7 @@ try {
 		else console.log(tasks.map((t) => `#${t.id} [${t.status}]${t.owner ? ' ' + t.owner : ''}${t.title ? ' - ' + t.title : ''}${t.contested.length ? ' CONTESTED by ' + t.contested.join(',') : ''}`).join('\n') || '(no tasks)');
 	} else if (cmd === 'verify') {
 		const r = await verify();
-		console.log(`${r.ok ? 'OK' : 'FAILED'}: ${r.events} events in ${r.shards} shard(s)`);
+		console.log(`${r.ok ? 'OK' : 'FAILED'}: ${r.events} events in ${r.shards} shard(s) (${defaultDir()})`);
 		r.problems.forEach((p) => console.log('  ' + p));
 		process.exit(r.ok ? 0 : 2);
 	} else if (cmd === 'schema') {

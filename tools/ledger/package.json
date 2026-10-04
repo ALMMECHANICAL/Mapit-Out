@@ -8,6 +8,6 @@
 	"bin": { "ledger": "cli.mjs" },
 	"scripts": {
 		"test": "node --test",
-		"verify": "node cli.mjs verify"
+		"verify": "cd ../.. && node tools/ledger/cli.mjs verify"
 	}
 }

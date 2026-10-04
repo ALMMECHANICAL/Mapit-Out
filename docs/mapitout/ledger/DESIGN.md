@@ -40,9 +40,9 @@ Principles:
 1. **Append-only facts, derived views.** Events are never edited. Task ownership, status and the
    context digest are computed by replaying events, so there is nothing to keep in sync.
 2. **One file per writer.** The shard name is `actor.host.session.jsonl` under `events/YYYY-MM/`. Two devices never
-   append to the same file, so `git pull` never conflicts. (Same actor + host + session = same file, guarded by a lock.)
+   append to the same file, so `git pull` never conflicts. (Same actor + host + session = same file, guarded by a lock.) The lock only coordinates processes on one checkout, so **identities must differ per device**: two checkouts using the same actor, host and session would append to the same file and conflict at sync. If `LEDGER_HOST` is set to a role alias, give each device its own alias.
 3. **Validate on the way in, not on the way out.** A bad or secret-bearing event never reaches disk.
-4. **Small events, links not blobs.** An event is a sentence plus refs (file, commit, pr, adr, diagram, url, asset, event).
+4. **Small events, links not blobs.** An event is a sentence plus refs (file, commit, pr, issue, adr, diagram, url, asset, event).
    Large content stays in the repo or the diagram; the ledger points at it.
 
 ## 4. Event model (schema v1)
@@ -128,8 +128,9 @@ sequenceDiagram
 
 `ledger context --since 14d --max-chars 6000` prints Markdown: open tasks (with owner and CONTESTED flags),
 latest hand-offs, last 10 decisions, then recent activity newest-last. The header, tasks, hand-offs and decisions
-are always kept; the **oldest activity lines are dropped first** and the cut is stated, so a small local
-model's context window is respected. This is the "read this first" for every actor.
+are kept first and are bounded (25 task lines, 3 hand-offs, 10 decisions, summaries cut at 200 characters); the **oldest activity lines are
+dropped first** and the cut is stated. `--max-chars` is a hard limit: if it is smaller than the fixed sections, the tail is cut and marked,
+so a small local model's context window is respected. This is the "read this first" for every actor.
 
 ## 6. How LM Studio gets in (OPEN)
 

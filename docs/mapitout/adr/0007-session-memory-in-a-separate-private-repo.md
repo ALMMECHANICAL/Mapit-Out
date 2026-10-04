@@ -8,7 +8,7 @@ facts but is not meant for free-form thinking. Details: `docs/mapitout/memory/DE
 
 ## Decision
 Keep narrative memory in one **separate private repository** of Markdown files. Every session ends by writing one small
-note into `inbox/` (one file per session, so devices never conflict) and pushing it; every session starts by pulling and
+note into `inbox/` (one file per session, named with the date, time and a random suffix so two devices never write the same path) and pushing it; every session starts by pulling and
 reading the newest notes. A curator pass, approved by the owner, folds inbox notes into `projects/` and `notes/`.
 Facts stay in the ledger. A per-device read cursor (not a cookie store) limits what each session re-reads.
 

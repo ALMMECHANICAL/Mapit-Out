@@ -19,10 +19,12 @@ $L context                       # READ THIS FIRST: open tasks, handoffs, decisi
 $L append --type task.claimed --task my-task --summary "taking it"
 $L append --type decision --summary "chose X because Y" --ref adr:0007
 $L append --type handoff --summary "next actor should know ..."
-$L tasks            # derived task state     $L tail --n 20     $L verify
+$L tasks            # derived task state
+$L tail --n 20
+$L verify
 ```
 
-If the project repo is public, set `LEDGER_HOST` to a role alias (for example `workstation`) so real machine names are not committed (they appear in event file names).
+If the project repo is public, set `LEDGER_HOST` to a role alias (for example `workstation`) so real machine names are not committed (they appear in event file names). Each device needs its own alias: the shard file is named from actor, host and session, and two checkouts sharing all three would write the same file.
 
 Identity variables: `LEDGER_ACTOR`, `LEDGER_KIND` (human|agent|model|system), `LEDGER_MODEL`, `LEDGER_HOST`,
 `LEDGER_SESSION`, `LEDGER_PROJECT`; storage dir `LEDGER_DIR` (default `./ledger`).
@@ -30,7 +32,7 @@ Identity variables: `LEDGER_ACTOR`, `LEDGER_KIND` (human|agent|model|system), `L
 ## Rules
 1. Write facts, one sentence: what and why. Link to files, commits, PRs, ADRs instead of pasting content.
 2. **Never** put keys, tokens, passwords, customer names, addresses or prices in an event. Secrets are rejected on write; that is a safety net, not permission.
-3. Do not edit or delete event files. A mistake is corrected by a new event. `verify` fails if history is changed.
+3. Do not edit or delete event files. A mistake is corrected by a new event. `verify` detects changes that do not also recompute the hash chain: it is tamper-evident, not tamper-proof.
 4. Start every session with `context`; end with a `handoff`.
 5. Claim a task before working on it; release it if you stop.
 
