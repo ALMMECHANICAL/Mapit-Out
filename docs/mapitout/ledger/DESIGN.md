@@ -51,7 +51,7 @@ Principles:
 |---|---|---|
 | `v` | yes | Schema version, currently 1 |
 | `id` | yes | `<12 hex epoch-ms>-<4 hex counter><6 hex random>`; strictly increasing within a process |
-| `ts` | yes | ISO-8601 UTC |
+| `ts` | yes | UTC in exactly the `Date#toISOString` format; must be a real calendar date |
 | `project` | yes | Default `mapitout`; lets one ledger serve several projects |
 | `type` | yes | See below |
 | `summary` | yes | 1-500 chars, one sentence: what and why |
@@ -87,6 +87,10 @@ stateDiagram-v2
   open --> done: task.completed
   done --> [*]
 ```
+
+Ownership rules: only the owner can release a task (or a human actor, to free an abandoned claim). When the owner releases,
+the next claimant, if there is one, inherits it. A losing claimant who releases only withdraws its own claim; a release by
+anyone else changes nothing.
 
 ### Two devices, one task
 
@@ -151,7 +155,7 @@ Measured on this sandbox with Node 22 (no tuning); re-run after changes that tou
 | Security | Secret scanner rejects keys/tokens/private keys on write and in verify; no personal or customer data by policy; shards written only through the library | Tests for 5 secret formats plus a data-field case |
 | Integrity | Tampering or deleting an event breaks the hash or chain and `verify` fails | Tamper and delete tests |
 | Maintainability | Zero dependencies; one validator is authoritative and the JSON Schema is generated from the same constants | Schema-sync test |
-| Performance | Append reads only the file tail; reads scan all shards | 20,000 events: append 0.8 ms each, readAll 68 ms, verify 319 ms, context 24 ms |
+| Performance | Append reads only the file tail (the window grows if the last event is larger); reads scan all shards | 20,000 events: append 0.8 ms each, readAll 68 ms, verify 319 ms, context 24 ms |
 
 Scale limit: reads are a full scan, fine into the low hundreds of thousands of events. Past roughly 100k events,
 add monthly snapshots or archive old months. Not needed now.

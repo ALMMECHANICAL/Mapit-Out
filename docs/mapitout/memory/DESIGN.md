@@ -35,7 +35,7 @@ A note may reference ledger event ids and ADRs.
 ## 4. Repository layout (the private memory repo)
 
 ```
-inbox/YYYY/MM/<date>-<device>-<session>.md   raw end-of-session notes; one file per session (never edited, never conflicts)
+inbox/YYYY/MM/<date>-<HHMMSS>-<device>-<project>-<random>.md   raw end-of-session notes; one file per session (never edited; the time and random part keep independently synced clones from colliding)
 projects/<project>/README.md                 current state per project: goal, status, next actions, links
 notes/<topic>.md                             curated, de-duplicated knowledge
 registers/                                   asset register and similar lists (rebuilt from events where possible)

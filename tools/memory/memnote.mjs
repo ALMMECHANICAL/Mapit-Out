@@ -13,6 +13,7 @@
 // Repo dir: --repo, or MEMORY_REPO, or ./ (must contain inbox/ after init).
 
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { hostname } from 'node:os';
 import path from 'node:path';
@@ -49,6 +50,15 @@ export function parseNote(text) {
 	return { meta, body: m[2] };
 }
 
+// Date.parse accepts 2026-02-31 and rolls it into March, so check the parts survive a round trip.
+export function isRealDate(s) {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+	if (!m) return false;
+	const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+	const t = new Date(Date.UTC(y, mo - 1, d));
+	return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+}
+
 export function validateNote(text) {
 	const errors = [], warnings = [];
 	const bytes = Buffer.byteLength(text);
@@ -59,7 +69,7 @@ export function validateNote(text) {
 	if (!meta) errors.push('missing front matter (--- fences with date, device, surface, actor, project)');
 	else {
 		for (const k of REQUIRED) if (!meta[k]) errors.push(`front matter missing "${k}"`);
-		if (meta.date && (!/^\d{4}-\d{2}-\d{2}$/.test(meta.date) || Number.isNaN(Date.parse(meta.date)))) errors.push('date must be a real YYYY-MM-DD');
+		if (meta.date && !isRealDate(meta.date)) errors.push('date must be a real calendar date, YYYY-MM-DD');
 		if (meta.surface && !SURFACES.includes(meta.surface)) errors.push(`surface must be one of: ${SURFACES.join(', ')}`);
 		for (const k of ['device', 'actor', 'project']) if (meta[k] && meta[k].length > 80) errors.push(`${k} too long`);
 	}
@@ -100,9 +110,12 @@ project: ${project}
 
 async function exists(p) { try { await fs.access(p); return true; } catch { return false; } }
 
-export function notePath(repo, meta) {
+// <date>-<HHMMSS>-<device>-<project>-<6 random hex>.md : the time and random part make a name clash between two
+// independently synced clones practically impossible (a clash would be an add/add git conflict).
+export function notePath(repo, meta, { now = new Date(), rand = () => randomBytes(3).toString('hex') } = {}) {
 	const [y, m] = meta.date.split('-');
-	return path.join(repo, 'inbox', y, m, `${meta.date}-${slug(meta.device)}-${slug(meta.project)}.md`);
+	const hms = now.toISOString().slice(11, 19).replace(/:/g, '');
+	return path.join(repo, 'inbox', y, m, `${meta.date}-${hms}-${slug(meta.device)}-${slug(meta.project)}-${rand()}.md`);
 }
 
 async function uniquePath(file) {
@@ -116,12 +129,12 @@ async function requireRepo(repo) {
 	if (!(await exists(path.join(repo, 'inbox')))) throw new Error(`memnote: ${repo} is not a memory repo (no inbox/). Run: memnote init ${repo}`);
 }
 
-export async function save(text, { repo, commit = false, push = false, dryRun = false } = {}) {
+export async function save(text, { repo, commit = false, push = false, dryRun = false, now, rand } = {}) {
 	const note = clean(text);
 	const v = validateNote(note);
 	if (!v.ok) { const e = new Error('memnote: note rejected:\n  - ' + v.errors.join('\n  - ')); e.problems = v; throw e; }
 	await requireRepo(repo);
-	const file = await uniquePath(notePath(repo, v.meta));
+	const file = await uniquePath(notePath(repo, v.meta, { now, rand }));
 	if (dryRun) return { file, warnings: v.warnings, written: false };
 	await fs.mkdir(path.dirname(file), { recursive: true });
 	await fs.writeFile(file, note, { flag: 'wx' });

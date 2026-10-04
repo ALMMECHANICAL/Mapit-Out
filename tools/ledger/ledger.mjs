@@ -26,6 +26,17 @@ export const REF_KINDS = ['file', 'commit', 'pr', 'issue', 'url', 'diagram', 'ad
 
 export const LIMITS = { summary: 500, name: 80, dataBytes: 4096, refs: 20, refText: 300, task: 80, project: 60 };
 
+export const TOP_KEYS = ['v', 'id', 'ts', 'project', 'type', 'summary', 'actor', 'task', 'parent', 'refs', 'data', 'prev', 'hash'];
+const ACTOR_KEYS = ['kind', 'name', 'model', 'host', 'session'];
+const REF_KEYS = ['kind', 'ref', 'note'];
+
+// Exactly the format Date#toISOString writes, and a real calendar date (Date.parse alone accepts 2026-02-31).
+function isIsoUtc(ts) {
+	if (typeof ts !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(ts)) return false;
+	const t = Date.parse(ts); // NaN for month 13 etc.; toISOString would throw on that, and validate must never throw
+	return !Number.isNaN(t) && new Date(t).toISOString() === ts;
+}
+
 const ID_RE = /^[0-9a-f]{12}-[0-9a-f]{10}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,79}$/;
@@ -95,7 +106,8 @@ export function validate(event) {
 	if (!event || typeof event !== 'object' || Array.isArray(event)) return ['event must be an object'];
 	if (event.v !== SCHEMA_VERSION) errs.push(`v must be ${SCHEMA_VERSION}`);
 	if (!ID_RE.test(event.id ?? '')) errs.push('id malformed');
-	if (typeof event.ts !== 'string' || Number.isNaN(Date.parse(event.ts)) || !event.ts.endsWith('Z')) errs.push('ts must be an ISO-8601 UTC timestamp');
+	if (!isIsoUtc(event.ts)) errs.push('ts must be a real ISO-8601 UTC timestamp like 2026-10-04T10:00:00.000Z');
+	for (const k of Object.keys(event)) if (!TOP_KEYS.includes(k)) errs.push(`unknown field "${k}"`);
 	if (!isStr(event.project, LIMITS.project)) errs.push('project required');
 	if (!EVENT_TYPES.includes(event.type)) errs.push(`type must be one of: ${EVENT_TYPES.join(', ')}`);
 	if (!isStr(event.summary, LIMITS.summary)) errs.push(`summary required (1-${LIMITS.summary} chars)`);
@@ -103,6 +115,7 @@ export function validate(event) {
 	const a = event.actor;
 	if (!a || typeof a !== 'object') errs.push('actor required');
 	else {
+		for (const k of Object.keys(a)) if (!ACTOR_KEYS.includes(k)) errs.push(`unknown actor field "${k}"`);
 		if (!ACTOR_KINDS.includes(a.kind)) errs.push(`actor.kind must be one of: ${ACTOR_KINDS.join(', ')}`);
 		if (!isStr(a.name, LIMITS.name)) errs.push('actor.name required');
 		for (const k of ['model', 'host', 'session']) {
@@ -116,6 +129,7 @@ export function validate(event) {
 	if (event.refs !== undefined) {
 		if (!Array.isArray(event.refs) || event.refs.length > LIMITS.refs) errs.push(`refs must be an array of at most ${LIMITS.refs}`);
 		else event.refs.forEach((r, i) => {
+			if (r && typeof r === 'object') for (const k of Object.keys(r)) if (!REF_KEYS.includes(k)) errs.push(`unknown field "${k}" in refs[${i}]`);
 			if (!r || !REF_KINDS.includes(r.kind) || !isStr(r.ref, LIMITS.refText)) errs.push(`refs[${i}] needs kind (${REF_KINDS.join('|')}) and ref`);
 			if (r && r.note !== undefined && !isStr(r.note, LIMITS.refText)) errs.push(`refs[${i}].note too long`);
 		});
@@ -149,7 +163,7 @@ export function schema() {
 		properties: {
 			v: { const: SCHEMA_VERSION },
 			id: { type: 'string', pattern: idPat },
-			ts: { type: 'string', format: 'date-time' },
+			ts: { type: 'string', format: 'date-time', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$', description: 'UTC, exactly as Date#toISOString writes it; must be a real calendar date.' },
 			project: { type: 'string', minLength: 1, maxLength: LIMITS.project },
 			type: { enum: EVENT_TYPES },
 			summary: { type: 'string', minLength: 1, maxLength: LIMITS.summary },
@@ -191,21 +205,25 @@ export function shardPath(dir, actor, now = new Date()) {
 	return path.join(dir, 'events', month, file);
 }
 
-// Last non-empty line of a file, reading only the tail (a line is well under TAIL bytes:
-// summary + data + refs are capped). Keeps append cost independent of shard size.
+// Last non-empty line of a file, read from the tail. The window doubles until a newline precedes the
+// last line (or it covers the whole file), so an event larger than the first window is still read whole.
+// (A fixed window cut such a line in half and the next event silently started a second chain.)
 const TAIL = 32768;
 async function lastLine(file) {
 	let fh;
 	try { fh = await fs.open(file, 'r'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
 	try {
 		const { size } = await fh.stat();
-		if (size === 0) return null;
-		const len = Math.min(size, TAIL);
-		const buf = Buffer.alloc(len);
-		await fh.read(buf, 0, len, size - len);
-		const lines = buf.toString('utf8').split('\n').filter(Boolean);
-		if (size > TAIL) lines.shift(); // first line of a tail slice may be cut
-		return lines.length ? lines[lines.length - 1] : null;
+		for (let len = Math.min(size, TAIL); size > 0; len = Math.min(size, len * 2)) {
+			const buf = Buffer.alloc(len);
+			await fh.read(buf, 0, len, size - len);
+			let end = buf.length;
+			while (end > 0 && (buf[end - 1] === 0x0a || buf[end - 1] === 0x0d)) end--; // trailing newlines
+			if (end === 0) { if (len >= size) return null; continue; } // window held only newlines
+			const nl = buf.lastIndexOf(0x0a, end - 1); // 0x0a never occurs inside a multi-byte UTF-8 sequence
+			if (nl >= 0 || len >= size) return buf.subarray(nl + 1, end).toString('utf8');
+		}
+		return null;
 	} finally { await fh.close(); }
 }
 
@@ -339,7 +357,17 @@ export function deriveTasks(events) {
 				break;
 			case 'task.progress': if (t.status === 'open' || t.status === 'blocked') t.status = t.owner ? 'claimed' : t.status; break;
 			case 'task.blocked': t.status = 'blocked'; break;
-			case 'task.released': t.owner = null; t.status = 'open'; t.contested = []; break;
+			case 'task.released': {
+				const who = ev.actor.name;
+				if (t.owner === who || (ev.actor.kind === 'human' && t.owner)) {
+					// the owner (or a human freeing an abandoned claim) gives the task up; the next claimant, if any, inherits it
+					t.owner = t.contested.shift() || null;
+					t.status = t.owner ? 'claimed' : 'open';
+				} else if (t.contested.includes(who)) {
+					t.contested = t.contested.filter((n) => n !== who); // a losing claimant withdraws only itself
+				} // anyone else releasing a task they do not hold changes nothing
+				break;
+			}
 			case 'task.completed': t.status = 'done'; break;
 		}
 	}

@@ -25,7 +25,9 @@
 		},
 		"ts": {
 			"type": "string",
-			"format": "date-time"
+			"format": "date-time",
+			"pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+			"description": "UTC, exactly as Date#toISOString writes it; must be a real calendar date."
 		},
 		"project": {
 			"type": "string",

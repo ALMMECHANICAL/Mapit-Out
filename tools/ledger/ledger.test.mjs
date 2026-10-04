@@ -182,6 +182,56 @@ test('events written in the same millisecond replay in write order (regression: 
 	assert.deepEqual(got, Array.from({ length: 40 }, (_, i) => i));
 });
 
+test('a valid event larger than the tail window still chains correctly (regression: lastLine returned null)', async () => {
+	const dir = await tmp();
+	const cjk = '界'.repeat(300); // 3 bytes each in UTF-8
+	const refs = Array.from({ length: 20 }, (_, i) => ({ kind: 'file', ref: cjk, note: cjk }));
+	const e1 = await append({ type: 'note', summary: 'big', refs, data: { pad: '界'.repeat(1300) }, actor: A }, { dir });
+	assert.ok(Buffer.byteLength(JSON.stringify(e1)) > 40000, 'test event should exceed the 32 KiB tail window');
+	const e2 = await append({ type: 'note', summary: 'after the big one', actor: A }, { dir });
+	assert.equal(e2.prev, e1.hash);
+	const r = await verify({ dir });
+	assert.equal(r.ok, true, r.problems.join('\n'));
+});
+
+test('only the owner (or a human) can release a task; a losing claimant releasing just withdraws itself', () => {
+	const mk = (n, ts, actor, type) => ({ id: ts.toString(16).padStart(12, '0') + '-' + String(n).padStart(10, '0'), ts: new Date(ts).toISOString(), type, task: 't', summary: 's', actor });
+	const owner = A, loser = B, third = { kind: 'agent', name: 'someone-else' }, human = { kind: 'human', name: 'owner' };
+	let tasks = deriveTasks([mk(1, 1000, owner, 'task.claimed'), mk(2, 2000, loser, 'task.claimed'), mk(3, 3000, loser, 'task.released')]);
+	assert.equal(tasks.get('t').owner, 'claude-code', 'loser withdrawing must not free the task');
+	assert.deepEqual(tasks.get('t').contested, []);
+	tasks = deriveTasks([mk(1, 1000, owner, 'task.claimed'), mk(2, 2000, third, 'task.released')]);
+	assert.equal(tasks.get('t').owner, 'claude-code', 'a stranger cannot release someone else\'s claim');
+	tasks = deriveTasks([mk(1, 1000, owner, 'task.claimed'), mk(2, 2000, loser, 'task.claimed'), mk(3, 3000, owner, 'task.released')]);
+	assert.equal(tasks.get('t').owner, 'lmstudio-qwen', 'owner releasing hands over to the next claimant');
+	tasks = deriveTasks([mk(1, 1000, owner, 'task.claimed'), mk(2, 2000, owner, 'task.released')]);
+	assert.equal(tasks.get('t').status, 'open');
+	tasks = deriveTasks([mk(1, 1000, owner, 'task.claimed'), mk(2, 2000, human, 'task.released')]);
+	assert.equal(tasks.get('t').owner, null, 'a human can free an abandoned claim');
+});
+
+test('unknown keys are rejected at every level, matching the JSON Schema (additionalProperties: false)', async () => {
+	const dir = await tmp();
+	await assert.rejects(append({ type: 'note', summary: 'x', actor: { ...A, unexpected: 1 } }, { dir }), /unknown.*actor/i);
+	await assert.rejects(append({ type: 'note', summary: 'x', actor: A, refs: [{ kind: 'file', ref: 'r', extra: 1 }] }, { dir }), /unknown.*refs\[0\]/i);
+	const good = await append({ type: 'note', summary: 'x', actor: A }, { dir });
+	const forged = { ...good, surprise: true };
+	forged.hash = hashEvent(forged);
+	assert.match(validate(forged).join(), /unknown.*field/i);
+	assert.equal((await readAll({ dir })).length, 1);
+});
+
+test('ts must be a real calendar date in the exact ISO format (Date.parse alone accepts 2026-02-31)', async () => {
+	const dir = await tmp();
+	const good = await append({ type: 'note', summary: 'x', actor: A }, { dir });
+	for (const ts of ['2026-02-31T00:00:00.000Z', '2026-13-01T00:00:00.000Z', '2026-10-04T10:00:00Z', '2026-10-04', 'yesterday', '2026-10-04T10:00:00.000+01:00']) {
+		const bad = { ...good, ts };
+		bad.hash = hashEvent(bad);
+		assert.match(validate(bad).join(), /ts must be/, ts);
+	}
+	assert.deepEqual(validate(good), []);
+});
+
 test('filters and since parsing', async () => {
 	const dir = await tmp();
 	await append({ type: 'note', summary: 'old', actor: A }, { dir, now: new Date('2026-01-01T00:00:00Z') });

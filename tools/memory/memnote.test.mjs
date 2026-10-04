@@ -66,11 +66,30 @@ test('template validates once the placeholder text is replaced, and prefills fie
 test('save files the note under inbox/YYYY/MM and never overwrites', async () => {
 	const d = await repo();
 	const a = await save(note(), { repo: d });
-	assert.match(a.file, /inbox\/2026\/10\/2026-10-04-workstation-mapitout\.md$/);
+	assert.match(a.file, /inbox\/2026\/10\/2026-10-04-\d{6}-workstation-mapitout-[0-9a-f]{6}\.md$/);
 	const b = await save(note(), { repo: d });
-	assert.match(b.file, /-mapitout-2\.md$/);
-	assert.equal((await listNotes(d)).length, 2);
+	assert.notEqual(a.file, b.file);
+	// force an exact name clash (same clock and random value): the local collision check must still not overwrite
+	const fixed = { now: new Date('2026-10-04T10:00:00Z'), rand: () => 'abcdef' };
+	const c = await save(note(), { repo: d, ...fixed }), c2 = await save(note(), { repo: d, ...fixed });
+	assert.match(c2.file, /-abcdef-2\.md$/);
+	assert.equal((await listNotes(d)).length, 4);
 	assert.equal(await fs.readFile(a.file, 'utf8'), clean(note()));
+});
+
+test('impossible calendar dates are rejected (regression: Date.parse normalised 2026-02-31 into March)', () => {
+	for (const d of ['2026-02-31', '2026-04-31', '2025-02-29', '2026-00-10', '2026-13-01', '2026-01-00']) {
+		assert.match(validateNote(note({ date: d })).errors.join(), /date/, d);
+	}
+	assert.equal(validateNote(note({ date: '2024-02-29' })).ok, true); // real leap day
+	assert.equal(validateNote(note({ date: '2026-12-31' })).ok, true);
+});
+
+test('two sessions on the same device, project and day get different file names (so synced clones never collide)', async () => {
+	const a = await repo(), b = await repo(); // independent clones that have not seen each other's notes
+	const fa = (await save(note(), { repo: a })).file, fb = (await save(note(), { repo: b })).file;
+	assert.notEqual(path.basename(fa), path.basename(fb));
+	assert.match(path.basename(fa), /^2026-10-04-\d{6}-workstation-mapitout-[0-9a-f]{6}\.md$/);
 });
 
 test('save accepts a fenced paste, supports dry run, and refuses secrets, bad notes and non-repos', async () => {
