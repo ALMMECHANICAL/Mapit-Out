@@ -9,5 +9,9 @@ window.DRAWIO_BASE_URL = null; // Replace with path to base of deployment, e.g. 
 window.DRAWIO_VIEWER_URL = null; // Replace your path to the viewer js, e.g. https://www.example.com/js/viewer.min.js
 window.DRAWIO_LIGHTBOX_URL = null; // Replace with your lightbox URL, eg. https://www.example.com
 window.DRAW_MATH_URL = 'math4/es5';
-window.DRAWIO_CONFIG = null; // Replace with your custom draw.io configurations. For more details, https://www.drawio.com/doc/faq/configure-diagram-editor
+window.DRAWIO_CONFIG = window.MAPITOUT_CONFIG || null; // Map It Out: set by mapitout/config.js (only loaded by mapitout.html); null for stock index.html
+if (/mapitout\.html/.test(window.location.pathname) && window.DRAWIO_CONFIG === null && window.console)
+{
+	console.warn('Map It Out: MAPITOUT_CONFIG not found; mapitout/config.js did not load before js/PreConfig.js. AI is disabled.');
+}
 urlParams['sync'] = 'manual';
