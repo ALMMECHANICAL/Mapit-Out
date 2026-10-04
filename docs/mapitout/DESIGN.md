@@ -79,8 +79,9 @@ codebase/business structure (an add-on), kept easy to split.
 - Every participant must see what the others did: a shared **activity/context ledger**
   (who, which model, which task, inputs, outputs, diagram version) that any agent can
   read before acting. This includes work done in LM Studio, so LM Studio sessions need
-  to write to (or be readable by) the ledger. Mechanism **OPEN** (file/db in repo,
-  MCP server, or LM Studio's API/logs).
+  to write to (or be readable by) the ledger. **Decided (ADR 0004): append-only JSONL in git,
+  one file per writer; core built** - see [ledger design](ledger/DESIGN.md). How LM Studio
+  writes to it: the MCP adapter is built (`docs/mapitout/ledger/MCP.md`) but untested with a real LM Studio; the logging proxy is deferred.
 - **Headless-first**: the tool contract works with no UI; UIs sit on top. Candidate
   front ends: this editor, Open WebUI (**OPEN**). Gemini is a candidate for Google
   Workspace tasks only. Using fewer frontier models is fine; add one only when a
@@ -89,6 +90,12 @@ codebase/business structure (an add-on), kept easy to split.
 **Design-first rule (owner).** Architecture, SDLC/DevOps, APIs, agent/skill workflows and
 documentation are designed and written before code, with reliability, security and
 maintainability measured up front. New features land as design docs/ADRs first.
+
+## Decisions and further design
+- ADRs: [`adr/`](adr/README.md) (0001 design-first, 0002 configure not patch, 0003 agnostic tool contract,
+  0004 ledger, 0005 diagram-design, 0006 Quick Quote, 0007 session memory).
+- Shared activity ledger: [`ledger/DESIGN.md`](ledger/DESIGN.md) (built: library, CLI, schema, tests, CI).
+- Planned, separate: a memory repo for long-running context across devices; may sit beside or absorb the ledger (OPEN).
 
 ## Constraints / risks
 - **CORS**: LM Studio server must have CORS enabled when the page is served from

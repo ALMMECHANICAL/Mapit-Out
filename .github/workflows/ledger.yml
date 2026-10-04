@@ -1,0 +1,36 @@
+name: Ledger and memory tools CI
+
+on:
+  push:
+    branches: [dev]
+    paths: ['tools/ledger/**', 'tools/memory/**', 'ledger/**', '.github/workflows/ledger.yml']
+  pull_request:
+    paths: ['tools/ledger/**', 'tools/memory/**', 'ledger/**', '.github/workflows/ledger.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 22] # package.json engines say >=18.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Unit and integration tests
+        run: node --test
+        working-directory: tools/ledger
+      - name: Memory note tool tests
+        run: node --test
+        working-directory: tools/memory
+      - name: Verify the committed ledger (hashes, chains, schema, secrets)
+        run: node tools/ledger/cli.mjs verify
+      - name: JSON Schema is in sync with the code
+        run: |
+          node tools/ledger/cli.mjs schema > /tmp/schema.json
+          diff /tmp/schema.json ledger/schema/event.v1.schema.json
