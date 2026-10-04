@@ -7,7 +7,8 @@
  * No upstream draw.io code is modified: everything goes through the documented
  * DRAWIO_CONFIG hook (see Editor.configure in js/diagramly/Editor.js).
  *
- * Override at deploy time by defining window.MAPITOUT_LLM before this file loads.
+ * Override at deploy time by editing mapitout/env.js (loaded before this file), which may
+ * define window.MAPITOUT_LLM = {baseUrl, models, apiKey}.
  */
 (function()
 {
@@ -15,14 +16,21 @@
 		// LM Studio default. Enable "Serve on local network" + CORS in the
 		// LM Studio server tab if the editor is served from another origin.
 		baseUrl: 'http://localhost:1234/v1',
-		// Model identifiers exactly as shown by GET {baseUrl}/models
+		// Model identifiers must match GET {baseUrl}/models exactly. 'local-model' is only a
+		// placeholder: set the real id in mapitout/env.js (a console warning is shown otherwise).
 		models: [
-			{name: 'Local - Default (LM Studio)', model: 'local-model'}
+			{name: 'Local - set model id in env.js', model: 'local-model'}
 		],
 		// LM Studio ignores the key, but draw.io hides a model unless its
 		// key is set, so a placeholder is required.
 		apiKey: 'lm-studio'
 	}, window.MAPITOUT_LLM || {});
+
+	if (llm.models.some(function(m) { return m.model === 'local-model'; }) && window.console)
+	{
+		console.warn('Map It Out: AI model id is the placeholder "local-model". Set the id shown by ' +
+			llm.baseUrl + '/models in mapitout/env.js (window.MAPITOUT_LLM).');
+	}
 
 	window.MAPITOUT_CONFIG = Object.assign({}, window.MAPITOUT_CONFIG, {
 		enableAi: true,
@@ -38,8 +46,6 @@
 		aiModels: llm.models.map(function(m)
 		{
 			return {name: m.name, model: m.model, config: 'gpt'};
-		}),
-		// Branding via draw.io's string-override hook
-		resources: {appName: 'Map It Out'}
+		})
 	});
 })();

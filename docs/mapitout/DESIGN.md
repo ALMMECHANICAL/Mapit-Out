@@ -14,14 +14,17 @@ Browser (mapitout.html)
   Editor.configure()  -> aiConfigs / aiModels / enableAi
   AI chat dialog  --POST /v1/chat/completions-->  LM Studio (localhost:1234)
 ```
-- Request shape is OpenAI-compatible (draw.io's built-in `gpt` config slot);
-  only the endpoint and model list are overridden. Response path
-  `$.choices[0].message.content`.
+- Request/response shape is OpenAI-compatible (draw.io's built-in `gpt` config slot,
+  response path `$.choices[0].message.content`). `config.js` overrides: `gptUrl`,
+  `gptApiKey` (placeholder), `aiModels`, `aiActions`, `enableAi` (true, since AI is
+  otherwise only on draw.io's own domains) and `settingsName`.
 - `createPublic` is removed from `aiActions`, and cloud models are removed from
   `aiModels`, so no prompt or diagram leaves the machine by default.
-- Zero edits to draw.io core, except one line in `js/PreConfig.js`.
+- Zero edits to draw.io core, except `js/PreConfig.js` (hands config over, warns if missing).
+- Deploy overrides go in `mapitout/env.js` (committed empty; no secrets, it is public to visitors).
+- **Model id must match LM Studio**: `local-model` is a placeholder; set the real id from `GET /v1/models` in `env.js` (console warning otherwise).
 
-## Config (`window.MAPITOUT_LLM`, define before `mapitout/config.js`)
+## Config (`window.MAPITOUT_LLM`, set in `mapitout/env.js`)
 | key | default | note |
 |---|---|---|
 | baseUrl | `http://localhost:1234/v1` | LM Studio server |
