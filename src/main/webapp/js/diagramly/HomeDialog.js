@@ -672,7 +672,7 @@ HomeDialog.prototype.createCard = function(file)
 	var showPlaceholder = function()
 	{
 		img.className = 'geHomePlaceholder';
-		img.setAttribute('src', IMAGE_PATH + '/drawlogo48.png');
+		img.setAttribute('src', IMAGE_PATH + '/mapit-logo48.png');
 	};
 
 	if (src != null)
